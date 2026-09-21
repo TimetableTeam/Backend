@@ -1,0 +1,130 @@
+{
+  "schema": "Tanseek_PostgreSQL_schema.sql",
+  "seed": "Tanseek_synthetic_seed.sql",
+  "term": "Tanseek Synthetic 2027",
+  "note": "Evaluate each candidate independently against the one baseline allocation. Report all hard reasons; expected is the main illustrative reason. Some cases intentionally have multiple reasons. For room-closure, holiday and capacity-waste cases, modify a copy of the seed or add a fixture per test.",
+  "cases": [
+    {
+      "id": "VALID_BASE",
+      "section": "AI301-S1",
+      "instructor": "instructor01",
+      "room": "LAB-01",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "FEASIBLE",
+      "reason": "baseline allocation; available, capacity and equipment fit"
+    },
+    {
+      "id": "ROOM_COLLISION",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "LAB-01",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "ROOM_CONFLICT",
+      "reason": "LAB-01 already hosts baseline"
+    },
+    {
+      "id": "STAFF_COLLISION",
+      "section": "AI301-S2",
+      "instructor": "instructor01",
+      "room": "LAB-03",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "STAFF_CONFLICT",
+      "reason": "instructor01 also qualifies for S2 and is teaching baseline S1"
+    },
+    {
+      "id": "GROUP_COLLISION",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "LAB-03",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "fixture": "For this test only, replace one S2 group link with AI301-S1-G1; do not mutate shared baseline data.",
+      "expected": "GROUP_CONFLICT",
+      "reason": "shared group has baseline S1 at the same time; capacity may also fail"
+    },
+    {
+      "id": "UNCONFIRMED",
+      "section": "AI303-S5",
+      "instructor": "instructor15",
+      "room": "LAB-03",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "AVAILABILITY_NOT_CONFIRMED",
+      "reason": "instructor15 submission is DRAFT"
+    },
+    {
+      "id": "STAFF_UNAVAILABLE",
+      "section": "AI301-S1",
+      "instructor": "instructor01",
+      "room": "LAB-03",
+      "weekday": 1,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "STAFF_UNAVAILABLE",
+      "reason": "Monday 09:00 explicitly unavailable"
+    },
+    {
+      "id": "EQUIPMENT_SHORTAGE",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "LAB-02",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "EQUIPMENT_SHORTAGE",
+      "reason": "requires 40 Python computers; LAB-02 has 30"
+    },
+    {
+      "id": "CAPACITY_SHORTAGE",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "LAB-10",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "CAPACITY_SHORTAGE",
+      "reason": "LAB-10 capacity 30; S2 has more than 30 students"
+    },
+    {
+      "id": "WRONG_ROOM_TYPE",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "ROOM-11",
+      "weekday": 7,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "ROOM_TYPE_MISMATCH",
+      "reason": "practical requires LAB"
+    },
+    {
+      "id": "BEYOND_HOURS",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "LAB-03",
+      "weekday": 7,
+      "start": "15:00",
+      "end": "18:00",
+      "expected": "INVALID_DURATION",
+      "reason": "120-minute session must end at 17:00"
+    },
+    {
+      "id": "NON_WORKING_DAY",
+      "section": "AI301-S2",
+      "instructor": "instructor02",
+      "room": "LAB-03",
+      "weekday": 4,
+      "start": "09:00",
+      "end": "11:00",
+      "expected": "NO_WORKING_SLOT",
+      "reason": "Thursday has no slots"
+    }
+  ]
+}

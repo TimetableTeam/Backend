@@ -1,0 +1,27 @@
+{
+  "name": "tanseek-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "P4 - Timetable, Room & Lab Allocation backend (Node.js/Express/PostgreSQL)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/unit/*.js",
+    "test:integration": "node --test tests/integration/*.js",
+    "test:all": "node --test tests/unit/*.js tests/integration/*.js",
+    "db:constraint-report": "node scripts/run-constraint-cases.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
