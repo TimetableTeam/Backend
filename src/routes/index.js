@@ -1,6 +1,9 @@
 'use strict';
 
 const { Router } = require('express');
+const { authenticate } = require('../middleware/authenticate');
+const { authorize, ROLES } = require('../middleware/authorize');
+const dashboardController = require('../controllers/dashboardController');
 
 const router = Router();
 
@@ -21,5 +24,25 @@ router.use('/dashboard', require('./dashboard.routes'));
 router.use('/calendar', require('./calendar.routes'));
 router.use('/model', require('./model.routes'));
 router.use('/change-notifications', require('./changeNotifications.routes'));
+router.use('/master-data', require('./masterData.routes'));
+router.use('/requirements', require('./requirements.routes'));
+router.use('/instructor-assignments', require('./instructorAssignments.routes'));
+router.use('/catalog', require('./catalog.routes'));
+router.use('/schedule/drafts', require('./scheduleDrafts.routes'));
+router.use('/admin', require('./admin.routes'));
+router.get(
+  '/overview',
+  authenticate,
+  authorize(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.SCHEDULER,
+    ROLES.DEPARTMENT_COORDINATOR,
+    ROLES.LAB_MANAGER,
+    ROLES.LECTURER,
+    ROLES.TA
+  ),
+  dashboardController.getSummary
+);
 
 module.exports = router;

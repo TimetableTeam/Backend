@@ -18,6 +18,16 @@ async function findById(id, client) {
   return res.rows[0] || null;
 }
 
+/** Look up a version by its (term, version_number) pair. Used to resolve frontend slugs like "draft-v3" to a real row. */
+async function findByTermAndVersionNumber(termId, versionNumber, client) {
+  const runner = client || { query };
+  const res = await runner.query(
+    `SELECT * FROM schedule_versions WHERE term_id = $1 AND version_number = $2`,
+    [termId, versionNumber]
+  );
+  return res.rows[0] || null;
+}
+
 async function findPublished(termId, client) {
   const runner = client || { query };
   const res = await runner.query(`SELECT * FROM schedule_versions WHERE term_id = $1 AND state = 'PUBLISHED'`, [termId]);
@@ -58,4 +68,4 @@ async function publish(client, versionId, publishedBy) {
   return res.rows[0];
 }
 
-module.exports = { listByTerm, findById, findPublished, nextVersionNumber, createDraft, publish };
+module.exports = { listByTerm, findById, findByTermAndVersionNumber, findPublished, nextVersionNumber, createDraft, publish };

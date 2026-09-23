@@ -10,6 +10,24 @@ async function listByCourseTerm(courseId, termId) {
   return res.rows;
 }
 
+/** All session requirements for a term, optionally narrowed to one course. Used by the flat /requirements endpoint. */
+async function listByTerm(termId, { courseId } = {}) {
+  const params = [termId];
+  let extra = '';
+  if (courseId) {
+    params.push(courseId);
+    extra = ` AND sr.course_id = $${params.length}`;
+  }
+  const res = await query(
+    `SELECT sr.*, c.code AS course_code, c.title AS course_title, c.department_id
+     FROM session_requirements sr JOIN courses c ON c.id = sr.course_id
+     WHERE sr.term_id = $1 ${extra}
+     ORDER BY c.code, sr.kind`,
+    params
+  );
+  return res.rows;
+}
+
 async function findById(id) {
   const res = await query(`SELECT * FROM session_requirements WHERE id = $1`, [id]);
   return res.rows[0] || null;
@@ -43,4 +61,4 @@ async function addRequiredEquipment(requirementId, equipmentId, quantity) {
   return res.rows[0];
 }
 
-module.exports = { listByCourseTerm, findById, getRequiredEquipment, createRequirement, addRequiredEquipment };
+module.exports = { listByCourseTerm, listByTerm, findById, getRequiredEquipment, createRequirement, addRequiredEquipment };
