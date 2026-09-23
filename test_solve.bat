@@ -1,0 +1,3 @@
+@echo off
+set TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxOSIsImVtYWlsIjoiZW5ncmFtenk5QGdtYWlsLmNvbSIsInJvbGUiOiJTVVBFUl9BRE1JTiIsImhvbWVEZXBhcnRtZW50SWQiOm51bGwsImlhdCI6MTc5MDAzNTY4NiwiZXhwIjoxNzkwMDc4ODg2fQ.ltstEFqDo9TOEUcZeDuulAE9lMDxcwtpTbzQJ5pD3t8
+curl.exe -X POST http://localhost:5000/api/v1/model/solve -H "Content-Type: application/json" -H "Authorization: Bearer %TOKEN%" -d @solve_request.json
