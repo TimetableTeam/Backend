@@ -26,9 +26,21 @@ function createApp() {
 
   app.use(
     cors({
-      origin: '*'
+      origin: true,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-CSRF-Token'
+      ]
     })
   );
+
+  app.options('*', cors({
+    origin: true,
+    credentials: true
+  }));
 
   app.use(securityHeaders);
   app.use(apiLimiter);
