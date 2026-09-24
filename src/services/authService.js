@@ -39,11 +39,17 @@ function signJwt(account) {
 function toPublicAccount(account) {
   return {
     id: account.id,
-    email: account.email,
+    name: account.full_name,
     fullName: account.full_name,
+    full_name: account.full_name,
+    email: account.email,
     role: account.role,
     state: account.state,
-    homeDepartmentId: account.home_department_id
+    status: account.state,
+    homeDepartmentId: account.home_department_id,
+    home_department_id: account.home_department_id,
+    departmentId: account.home_department_id,
+    department_id: account.home_department_id
   };
 }
 

@@ -18,7 +18,7 @@ router.get('/', authenticate, authorize(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.DE
 router.get('/:id', authenticate, authorize(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.DEPARTMENT_COORDINATOR, ROLES.REGISTRATION_OFFICER), studentsController.getStudent);
 
 // REGISTRATION_OFFICER can create students
-const manageStudents = authorize(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.REGISTRATION_OFFICER);
+const manageStudents = authorize(ROLES.REGISTRATION_OFFICER);
 router.post('/', authenticate, manageStudents, studentsController.createStudent);
 
 module.exports = router;

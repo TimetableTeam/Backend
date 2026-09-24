@@ -15,7 +15,7 @@ async function listAll({ kind, active } = {}) {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const res = await query(
-    `SELECT r.id, r.building, r.code, r.kind, r.capacity, r.accessible, r.active, r.managed_by, r.updated_at
+    `SELECT r.id, r.building, r.code, r.kind, r.capacity, r.accessible, r.active, r.managed_by, r.updated_at, r.frontend_type, r.frontend_status, r.closure_note
      FROM rooms r ${where} ORDER BY r.building, r.code`,
     params
   );
@@ -64,7 +64,7 @@ async function createRoom({ building, code, kind, capacity, accessible = false, 
 }
 
 async function updateRoom(id, fields) {
-  const allowed = ['building', 'code', 'kind', 'capacity', 'accessible', 'active', 'managed_by'];
+  const allowed = ['building', 'code', 'kind', 'capacity', 'accessible', 'active', 'managed_by', 'frontend_type', 'frontend_status', 'closure_note'];
   const sets = [];
   const params = [];
   for (const [key, value] of Object.entries(fields)) {
@@ -114,7 +114,8 @@ async function getClosureOccurrencesForWeekday(roomId, weekday, termStartsOn, te
      FROM room_closures
      WHERE room_id = $1
        AND EXTRACT(ISODOW FROM (starts_at AT TIME ZONE 'Africa/Cairo')) = $2
-       AND (starts_at AT TIME ZONE 'Africa/Cairo')::date BETWEEN $3 AND $4`,
+       AND (starts_at AT TIME ZONE 'Africa/Cairo')::date >= $3::date
+       AND ($4::date IS NULL OR (starts_at AT TIME ZONE 'Africa/Cairo')::date <= $4::date)`,
     [roomId, weekday, termStartsOn, termEndsOn]
   );
   return res.rows.map((r) => ({ start: String(r.local_start).slice(0, 5), end: String(r.local_end).slice(0, 5), reason: r.reason }));

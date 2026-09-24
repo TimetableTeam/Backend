@@ -109,15 +109,12 @@ const getMyTimetable = asyncHandler(async (req, res) => {
   }
 
   const versionRes = await query(
-    `SELECT id
-     FROM schedule_versions
-     WHERE term_id = (
-       SELECT id
-       FROM academic_terms
-       WHERE is_active = true
-       LIMIT 1
-     )
-     AND state = 'PUBLISHED'`
+    `SELECT sv.id
+     FROM schedule_versions sv
+     JOIN academic_terms t ON t.id = sv.term_id
+     WHERE sv.state = 'PUBLISHED'
+     ORDER BY (t.state = 'ACTIVE') DESC, t.starts_on DESC, sv.published_at DESC
+     LIMIT 1`
   );
 
   if (!versionRes.rows.length) {

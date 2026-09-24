@@ -8,7 +8,7 @@ BEGIN;
 -- ============================================================
 -- Password Reset Tokens
 -- ============================================================
-CREATE TABLE password_reset_tokens (
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     account_id bigint NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     token_hash text NOT NULL UNIQUE,
@@ -17,13 +17,13 @@ CREATE TABLE password_reset_tokens (
     created_at timestamptz NOT NULL DEFAULT now(),
     ip_address inet
 );
-CREATE INDEX idx_password_reset_account ON password_reset_tokens(account_id);
-CREATE INDEX idx_password_reset_token ON password_reset_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_reset_account ON password_reset_tokens(account_id);
+CREATE INDEX IF NOT EXISTS idx_password_reset_token ON password_reset_tokens(token_hash);
 
 -- ============================================================
 -- Email Queue (for async email sending)
 -- ============================================================
-CREATE TABLE email_queue (
+CREATE TABLE IF NOT EXISTS email_queue (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     to_email varchar(254) NOT NULL,
     subject varchar(500) NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE email_queue (
     sent_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_email_queue_status ON email_queue(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status, scheduled_at);
 
 -- ============================================================
 -- Add SUPER_ADMIN transfer audit logging

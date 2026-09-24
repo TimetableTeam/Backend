@@ -8,6 +8,8 @@ const dashboardController = require('../controllers/dashboardController');
 const router = Router();
 
 router.use('/health', require('./health.routes'));
+// Frozen frontend contract compatibility layer. Keep this before the native routers.
+router.use('/', require('./frontendCompat.routes'));
 router.use('/auth', require('./auth.routes'));
 router.use('/departments', require('./departments.routes'));
 router.use('/terms', require('./terms.routes'));
@@ -30,19 +32,4 @@ router.use('/instructor-assignments', require('./instructorAssignments.routes'))
 router.use('/catalog', require('./catalog.routes'));
 router.use('/schedule/drafts', require('./scheduleDrafts.routes'));
 router.use('/admin', require('./admin.routes'));
-router.get(
-  '/overview',
-  authenticate,
-  authorize(
-    ROLES.SUPER_ADMIN,
-    ROLES.ADMIN,
-    ROLES.SCHEDULER,
-    ROLES.DEPARTMENT_COORDINATOR,
-    ROLES.LAB_MANAGER,
-    ROLES.LECTURER,
-    ROLES.TA
-  ),
-  dashboardController.getSummary
-);
-
 module.exports = router;

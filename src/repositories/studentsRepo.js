@@ -10,7 +10,7 @@ async function list({ termId = null, departmentId = null, academicLevel = null, 
   let paramIndex = 1;
 
   if (termId) {
-    conditions.push(`s.term_id = $${paramIndex++}`);
+    conditions.push(`EXISTS (SELECT 1 FROM student_course_registrations scr WHERE scr.student_id = s.id AND scr.term_id = $${paramIndex++} AND scr.state = 'REGISTERED')`);
     params.push(termId);
   }
   if (departmentId) {

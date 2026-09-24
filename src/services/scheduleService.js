@@ -71,6 +71,18 @@ async function publishVersion({ versionId, actor }) {
     throw ApiError.conflict('Cannot publish: hard conflicts exist in this schedule.', { violations: validation.violations });
   }
 
+  const review = await require('../db/pool').query(
+    `SELECT 1 FROM audit_events
+     WHERE entity_type = 'schedule_versions' AND entity_id = $1
+       AND action = 'SCHEDULE_VERSION_SUBMITTED_FOR_REVIEW'
+       AND outcome = 'SUCCESS'
+     ORDER BY occurred_at DESC LIMIT 1`,
+    [versionId]
+  );
+  if (!review.rows.length) {
+    throw ApiError.conflict('The Scheduler must submit this draft for Admin review before publishing.');
+  }
+
   const published = await withTransaction((client) => scheduleVersionsRepo.publish(client, versionId, actor.id));
 
   await auditRepo.record({

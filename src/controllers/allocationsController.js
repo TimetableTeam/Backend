@@ -46,7 +46,7 @@ const checkConflicts = asyncHandler(async (req, res) => {
 });
 
 const recommend = asyncHandler(async (req, res) => {
-  const { versionId, sectionId, requirementId, instructorId, weekday, start, sameDayOnly, limit } = req.body;
+  const { versionId, sectionId, requirementId, instructorId, weekday, start, sameDayOnly, limit, excludeAllocationId } = req.body;
   const version = await scheduleVersionsRepo.findById(versionId);
   if (!version) throw ApiError.notFound('Schedule version not found.');
 
@@ -60,6 +60,7 @@ const recommend = asyncHandler(async (req, res) => {
     start,
     sameDayOnly: sameDayOnly !== false,
     limit: limit ? Number(limit) : 5,
+    excludeAllocationId: excludeAllocationId ? Number(excludeAllocationId) : null,
   });
   return ok(res, results);
 });

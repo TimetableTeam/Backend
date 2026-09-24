@@ -128,7 +128,7 @@ CREATE TABLE academic_terms (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name varchar(120) NOT NULL,
   starts_on date NOT NULL,
-  ends_on date NOT NULL,
+  ends_on date,
   state term_state NOT NULL DEFAULT 'PLANNING',
   availability_deadline timestamptz,
   created_by bigint REFERENCES accounts(id),

@@ -10,7 +10,7 @@ BEGIN;
 -- Students table (separate from accounts, linked via account_id)
 -- The Model expects a separate students table linked 1:1 to accounts
 -- ============================================================
-CREATE TABLE students (
+CREATE TABLE IF NOT EXISTS students (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     university_id varchar(50) NOT NULL UNIQUE,
     full_name varchar(180) NOT NULL,
@@ -22,14 +22,14 @@ CREATE TABLE students (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX students_email_unique_ci ON students (lower(email));
-CREATE UNIQUE INDEX students_university_id_unique ON students (university_id);
+CREATE UNIQUE INDEX IF NOT EXISTS students_email_unique_ci ON students (lower(email));
+CREATE UNIQUE INDEX IF NOT EXISTS students_university_id_unique ON students (university_id);
 
 -- ============================================================
 -- Student Group Members (many-to-many: students <-> student_groups)
 -- The Model expects this table for bulk assignment of students to groups
 -- ============================================================
-CREATE TABLE student_group_members (
+CREATE TABLE IF NOT EXISTS student_group_members (
     group_id bigint NOT NULL REFERENCES student_groups(id) ON DELETE CASCADE,
     student_id bigint NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     joined_at timestamptz NOT NULL DEFAULT now(),
@@ -40,9 +40,14 @@ CREATE TABLE student_group_members (
 -- Student Course Registrations
 -- Students register for courses (per term), then get enrolled in sections
 -- ============================================================
-CREATE TYPE registration_state AS ENUM ('REGISTERED','DROPPED','WAITLISTED','CANCELLED');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'registration_state') THEN
+    CREATE TYPE registration_state AS ENUM ('REGISTERED','DROPPED','WAITLISTED','CANCELLED');
+  END IF;
+END $$;
 
-CREATE TABLE student_course_registrations (
+CREATE TABLE IF NOT EXISTS student_course_registrations (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     student_id bigint NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     course_id bigint NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
@@ -58,9 +63,14 @@ CREATE TABLE student_course_registrations (
 -- Student Section Enrollments (authoritative source for student timetable)
 -- Each registered student gets enrolled in exactly one Lecture section and one Practical section per course
 -- ============================================================
-CREATE TYPE enrollment_state AS ENUM ('ACTIVE','DROPPED','WAITLISTED','COMPLETED');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enrollment_state') THEN
+    CREATE TYPE enrollment_state AS ENUM ('ACTIVE','DROPPED','WAITLISTED','COMPLETED');
+  END IF;
+END $$;
 
-CREATE TABLE student_section_enrollments (
+CREATE TABLE IF NOT EXISTS student_section_enrollments (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     registration_id bigint NOT NULL REFERENCES student_course_registrations(id) ON DELETE CASCADE,
     term_id bigint NOT NULL REFERENCES academic_terms(id) ON DELETE CASCADE,

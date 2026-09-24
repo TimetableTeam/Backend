@@ -123,6 +123,8 @@ function recommendAlternatives({
       results.push({
         room: room.code,
         roomId: room.id,
+        capacity: room.capacity,
+        equipment: (room.equipment || []).map((item) => item.quantity > 1 ? `${item.name} ×${item.quantity}` : item.name).join(' + '),
         weekday: time.weekday,
         start: time.start,
         end: time.end,

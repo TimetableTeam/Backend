@@ -10,6 +10,14 @@ function pad(n) {
   return String(n).padStart(2, '0');
 }
 
+function asUtcDate(value) {
+  if (value instanceof Date) return value;
+  const text = String(value || '').slice(0, 10);
+  const date = new Date(`${text}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) throw ApiError.badRequest('Invalid academic term date.');
+  return date;
+}
+
 function icsDate(date) {
   return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}`;
 }
@@ -62,11 +70,11 @@ async function buildIcsForTerm({ termId, instructorId, sectionId, roomId }) {
 
   const now = new Date();
   const dtstamp = icsDateTime(now, now.getUTCHours(), now.getUTCMinutes());
-  const untilDate = new Date(Date.UTC(term.ends_on.getUTCFullYear(), term.ends_on.getUTCMonth(), term.ends_on.getUTCDate(), 23, 59, 59));
-  const untilStr = `${icsDate(untilDate)}T235959Z`;
+  const termStart = asUtcDate(term.starts_on);
+  const untilStr = term.ends_on ? `${icsDate(asUtcDate(term.ends_on))}T235959Z` : null;
 
   for (const a of allocations) {
-    const firstDate = firstOccurrence(term.starts_on, a.weekday);
+    const firstDate = firstOccurrence(termStart, a.weekday);
     const [sh, sm] = String(a.start).slice(0, 5).split(':').map(Number);
     const [eh, em] = String(a.end).slice(0, 5).split(':').map(Number);
 
@@ -75,7 +83,7 @@ async function buildIcsForTerm({ termId, instructorId, sectionId, roomId }) {
     lines.push(`DTSTAMP:${dtstamp}Z`);
     lines.push(`DTSTART:${icsDateTime(firstDate, sh, sm)}`);
     lines.push(`DTEND:${icsDateTime(firstDate, eh, em)}`);
-    lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${ICS_WEEKDAY[a.weekday]};UNTIL=${untilStr}`);
+    lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${ICS_WEEKDAY[a.weekday]}${untilStr ? `;UNTIL=${untilStr}` : ''}`);
     lines.push(`SUMMARY:${escapeText(`${a.course_code} ${a.section_code} (${a.session_kind})`)}`);
     lines.push(`LOCATION:${escapeText(`${a.room_building ? a.room_building + ' - ' : ''}${a.room_code}`)}`);
     lines.push(`DESCRIPTION:${escapeText(`${a.course_title} \u2014 Instructor: ${a.instructor_name}`)}`);

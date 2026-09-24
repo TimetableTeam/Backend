@@ -6,8 +6,8 @@ const { authenticate } = require('../middleware/authenticate');
 const { authorize, ROLES } = require('../middleware/authorize');
 
 const router = Router();
-const manageVersions = authorize(ROLES.ADMIN, ROLES.SCHEDULER);
-const publishVersions = authorize(ROLES.ADMIN, ROLES.SCHEDULER);
+const manageVersions = authorize(ROLES.SCHEDULER);
+const publishVersions = authorize(ROLES.ADMIN);
 const staffOnly = authorize(ROLES.ADMIN, ROLES.SCHEDULER, ROLES.DEPARTMENT_COORDINATOR, ROLES.LAB_MANAGER, ROLES.LECTURER, ROLES.TA);
 
 router.get('/', authenticate, staffOnly, scheduleVersionsController.list);

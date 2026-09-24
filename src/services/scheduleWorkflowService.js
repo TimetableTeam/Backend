@@ -162,6 +162,25 @@ async function revalidateDraft(versionId) {
  * Publish draft (Admin workflow) - archives previous published, publishes this one
  */
 async function publishDraft(versionId, actorId) {
+  // Final Tanseek workflow: a Scheduler must submit the draft, then Admin publishes.
+  // The DB enum intentionally stays DRAFT/PUBLISHED/ARCHIVED, so review submission
+  // is represented by an immutable audit event rather than inventing an unsupported enum value.
+  const validation = await validateDraft(versionId);
+  if (!validation.valid) {
+    throw ApiError.conflict('Cannot publish: hard conflicts exist', { violations: validation.conflicts });
+  }
+  const review = await require('../db/pool').query(
+    `SELECT 1 FROM audit_events
+     WHERE entity_type = 'schedule_versions' AND entity_id = $1
+       AND action = 'SCHEDULE_VERSION_SUBMITTED_FOR_REVIEW'
+       AND outcome = 'SUCCESS'
+     ORDER BY occurred_at DESC LIMIT 1`,
+    [versionId]
+  );
+  if (!review.rows.length) {
+    throw ApiError.conflict('The Scheduler must submit this draft for Admin review before publishing.');
+  }
+
   return withTransaction(async (client) => {
     const version = await client.query('SELECT * FROM schedule_versions WHERE id = $1 FOR UPDATE', [versionId]);
     if (!version.rows[0]) throw ApiError.notFound('Schedule version not found.');

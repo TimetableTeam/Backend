@@ -11,7 +11,7 @@ INSERT INTO accounts (email,full_name,role,state,home_department_id) VALUES
  ('coordinator@tanseek.example.test','Demo AI Coordinator','DEPARTMENT_COORDINATOR','INVITED',(SELECT id FROM departments WHERE code='AI')),
  ('lab.manager@tanseek.example.test','Demo Lab Manager','LAB_MANAGER','INVITED',(SELECT id FROM departments WHERE code='AI'));
 INSERT INTO academic_terms (name,starts_on,ends_on,state,availability_deadline)
-VALUES ('Tanseek Synthetic 2027','2027-09-01','2027-12-31','COLLECTING_AVAILABILITY','2027-08-31 23:59:00+03');
+VALUES ('Tanseek Synthetic 2027','2027-09-01',NULL,'COLLECTING_AVAILABILITY','2027-08-31 23:59:00+03');
 INSERT INTO accounts (email,full_name,role,state,home_department_id) VALUES ('instructor01@tanseek.example.test','Demo Instructor 01','LECTURER','INVITED',(SELECT id FROM departments WHERE code='AI'));
 INSERT INTO accounts (email,full_name,role,state,home_department_id) VALUES ('instructor02@tanseek.example.test','Demo Instructor 02','LECTURER','INVITED',(SELECT id FROM departments WHERE code='AI'));
 INSERT INTO accounts (email,full_name,role,state,home_department_id) VALUES ('instructor03@tanseek.example.test','Demo Instructor 03','LECTURER','INVITED',(SELECT id FROM departments WHERE code='AI'));

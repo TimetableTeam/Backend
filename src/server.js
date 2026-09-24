@@ -4,6 +4,7 @@ const { createApp } = require('./app');
 const { env, assertProductionSafety, assertJwtConfigured } = require('./config/env');
 const { healthCheck, closePool } = require('./db/pool');
 const { bootstrapSuperAdmin } = require('./db/bootstrapSuperAdmin');
+const { ensureFrontendCompatibilitySchema } = require('./db/frontendCompatibilitySchema');
 
 async function start() {
   assertProductionSafety();
@@ -16,6 +17,12 @@ async function start() {
       console.error('[startup] Set DATABASE_URL correctly in .env and ensure PostgreSQL is running.');
     } else {
       console.log('[startup] PostgreSQL connection OK.');
+      try {
+        await ensureFrontendCompatibilitySchema();
+        console.log('[startup] Frontend compatibility schema OK.');
+      } catch (err) {
+        console.error('[startup] Frontend compatibility schema check failed:', err.message);
+      }
       try {
         await bootstrapSuperAdmin();
       } catch (err) {

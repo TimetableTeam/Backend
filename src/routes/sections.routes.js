@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { authorize, ROLES } = require('../middleware/authorize');
 
 const router = Router();
-const manageSections = authorize(ROLES.ADMIN, ROLES.DEPARTMENT_COORDINATOR, ROLES.SCHEDULER);
+const manageSections = authorize(ROLES.DEPARTMENT_COORDINATOR);
 
 router.get('/', authenticate, sectionsController.list);
 router.get('/:id', authenticate, sectionsController.getOne);

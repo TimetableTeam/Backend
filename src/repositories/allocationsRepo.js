@@ -9,7 +9,7 @@ async function listByVersion(versionId) {
         al.instructor_id, ins.full_name AS instructor_name,
         al.room_id, r.code AS room_code, r.building AS room_building,
         ts.weekday, ts.starts_at AS start, al.ends_at AS end,
-        sec.code AS section_code, c.code AS course_code, c.title AS course_title,
+        sec.code AS section_code, c.id AS course_id, c.code AS course_code, c.title AS course_title, c.department_id,
         sr.kind AS session_kind,
         al.created_at, al.updated_at
      FROM allocations al

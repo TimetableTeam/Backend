@@ -5,11 +5,12 @@ const ApiError = require('../utils/ApiError');
 
 async function listByStudent(studentId) {
   const res = await query(
-    `SELECT sse.*, s.code as section_code, s.kind as section_kind, c.code as course_code, c.title as course_title
+    `SELECT sse.*, s.code as section_code, sse.section_kind, c.code as course_code, c.title as course_title, scr.student_id
      FROM student_section_enrollments sse
+     JOIN student_course_registrations scr ON scr.id = sse.registration_id
      JOIN sections s ON s.id = sse.section_id
      JOIN courses c ON c.id = sse.course_id
-     WHERE sse.student_id = $1
+     WHERE scr.student_id = $1
      ORDER BY sse.assigned_at DESC`,
     [studentId]
   );
@@ -39,9 +40,10 @@ async function create(data) {
 
 async function listBySection(sectionId) {
   const res = await query(
-    `SELECT sse.*, st.full_name as student_name, st.university_id, st.email
+    `SELECT sse.*, st.full_name as student_name, st.university_id, st.email, scr.student_id
      FROM student_section_enrollments sse
-     JOIN students st ON st.id = sse.student_id
+     JOIN student_course_registrations scr ON scr.id = sse.registration_id
+     JOIN students st ON st.id = scr.student_id
      WHERE sse.section_id = $1 AND sse.state = 'ACTIVE'
      ORDER BY st.full_name`,
     [sectionId]

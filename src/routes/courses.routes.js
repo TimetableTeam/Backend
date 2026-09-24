@@ -7,7 +7,7 @@ const { authorize, ROLES } = require('../middleware/authorize');
 const { enforceDepartmentAccessForCourse } = require('../middleware/departmentGrants');
 
 const router = Router();
-const manageCourses = authorize(ROLES.ADMIN, ROLES.DEPARTMENT_COORDINATOR, ROLES.SCHEDULER);
+const manageCourses = authorize(ROLES.DEPARTMENT_COORDINATOR);
 
 router.get('/', authenticate, coursesController.list);
 router.get('/:id', authenticate, coursesController.getOne);

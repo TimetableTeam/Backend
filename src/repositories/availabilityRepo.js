@@ -44,7 +44,7 @@ async function upsertSubmissionDraft(termId, instructorId) {
   const res = await query(
     `INSERT INTO availability_submissions (term_id, instructor_id, state)
      VALUES ($1,$2,'DRAFT')
-     ON CONFLICT (term_id, instructor_id) DO UPDATE SET updated_at = now(), revision = availability_submissions.revision + 1
+     ON CONFLICT (term_id, instructor_id) DO UPDATE SET state = 'DRAFT', confirmed_at = NULL, updated_at = now(), revision = availability_submissions.revision + 1
      RETURNING *`,
     [termId, instructorId]
   );

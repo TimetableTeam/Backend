@@ -7,7 +7,7 @@ const { authorize, ROLES } = require('../middleware/authorize');
 const { createAllocationSchema, checkConflictsSchema } = require('../validators/allocationValidators');
 
 const router = Router();
-const manageAllocations = authorize(ROLES.ADMIN, ROLES.SCHEDULER, ROLES.DEPARTMENT_COORDINATOR);
+const manageAllocations = authorize(ROLES.ADMIN, ROLES.SCHEDULER);
 
 router.get('/', authenticate, allocationsController.listByVersion);
 router.post('/check-conflicts', authenticate, manageAllocations, checkConflictsSchema, allocationsController.checkConflicts);

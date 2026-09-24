@@ -21,7 +21,7 @@ const ApiError = require('../utils/ApiError');
  *  - the originally requested weekday/start, plus (optionally) every other working slot
  *    on the same weekday, as time candidates
  */
-async function suggestAlternatives({ termId, versionId, sectionId, requirementId, instructorId, weekday, start, sameDayOnly = true, limit = 5 }) {
+async function suggestAlternatives({ termId, versionId, sectionId, requirementId, instructorId, weekday, start, sameDayOnly = true, limit = 5, excludeAllocationId = null }) {
   const [term, requirement, instructor, section] = await Promise.all([
     termsRepo.findById(termId),
     sessionRequirementsRepo.findById(requirementId),
@@ -38,7 +38,7 @@ async function suggestAlternatives({ termId, versionId, sectionId, requirementId
     sessionRequirementsRepo.getRequiredEquipment(requirementId),
     sectionsRepo.getGroupsForSection(sectionId),
     availabilityRepo.getAvailabilityForEngine(termId, instructorId),
-    allocationsRepo.listForEngine(versionId, null),
+    allocationsRepo.listForEngine(versionId, excludeAllocationId),
     timeSlotsRepo.listByTerm(termId),
   ]);
 
@@ -55,14 +55,18 @@ async function suggestAlternatives({ termId, versionId, sectionId, requirementId
 
   const workingSlots = workingSlotRows.map((r) => ({ weekday: r.weekday, start: String(r.starts_at).slice(0, 5), end: String(r.ends_at).slice(0, 5) }));
 
-  const timeCandidates = sameDayOnly
-    ? [{ weekday, start, end: addMinutes(start, requirement.duration_minutes) }]
-    : workingSlots
-        .filter((s) => Number(s.weekday) === Number(weekday))
-        .map((s) => ({ weekday: s.weekday, start: s.start, end: addMinutes(s.start, requirement.duration_minutes) }));
+  // sameDayOnly means "keep the recommendation on the current weekday", not
+  // "keep the exact same time". The UI promises suggested spaces *and slots*,
+  // so evaluate every configured slot on that day. When false, evaluate all
+  // configured working slots across the term week.
+  const timeCandidates = workingSlots
+    .filter((s) => !sameDayOnly || Number(s.weekday) === Number(weekday))
+    .map((s) => ({ weekday: s.weekday, start: s.start, end: addMinutes(s.start, requirement.duration_minutes) }));
 
-  // Always include the originally requested slot even if sameDayOnly=false already implied it.
-  if (!sameDayOnly && !timeCandidates.some((t) => t.start === start)) {
+  // Keep the originally requested slot in the candidate set even when it is
+  // missing from the configured slot rows, so a pure room swap can still be
+  // recommended.
+  if (!timeCandidates.some((t) => Number(t.weekday) === Number(weekday) && t.start === start)) {
     timeCandidates.push({ weekday, start, end: addMinutes(start, requirement.duration_minutes) });
   }
 

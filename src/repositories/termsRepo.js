@@ -15,6 +15,21 @@ async function findById(id) {
   return res.rows[0] || null;
 }
 
+async function findActive() {
+  const res = await query(`SELECT * FROM academic_terms WHERE state = 'ACTIVE' ORDER BY starts_on DESC LIMIT 1`);
+  return res.rows[0] || null;
+}
+
+async function findCurrent() {
+  const res = await query(
+    `SELECT * FROM academic_terms
+     WHERE state <> 'ARCHIVED'
+     ORDER BY CASE WHEN state='ACTIVE' THEN 0 ELSE 1 END, starts_on DESC
+     LIMIT 1`
+  );
+  return res.rows[0] || null;
+}
+
 async function findActiveOrLatest() {
   const active = await query(`SELECT * FROM academic_terms WHERE state = 'ACTIVE' ORDER BY starts_on DESC LIMIT 1`);
   if (active.rows[0]) return active.rows[0];
@@ -27,4 +42,4 @@ async function getHolidays(termId) {
   return res.rows;
 }
 
-module.exports = { listAll, findById, findActiveOrLatest, getHolidays };
+module.exports = { listAll, findById, findActive, findCurrent, findActiveOrLatest, getHolidays };
