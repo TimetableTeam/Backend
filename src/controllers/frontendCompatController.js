@@ -1471,25 +1471,53 @@ async function resolveFrontendAllocationInput(version, body, existing = null) {
     roomId = room.rows[0]?.id ? Number(room.rows[0].id) : null;
   }
   if (!roomId) throw ApiError.badRequest('Selected room or lab was not found.');
+let weekday = null;
 
-  let weekday = num(body.weekday);
-  if (!weekday && body.day) weekday = DAY_TO_ISO[String(body.day).trim().toLowerCase()] || null;
-  if (!weekday && existing?.start_slot_id) {
-    const row = await query(`SELECT weekday FROM time_slots WHERE id=$1`, [existing.start_slot_id]);
-    weekday = row.rows[0]?.weekday ? Number(row.rows[0].weekday) : null;
-  }
-  if (!weekday) throw ApiError.badRequest('Day is required.');
-
-  let start = await resolveFrontendSlotStart(version.term_id, body.slot, body.start ?? body.starts_at ?? body.startTime);
-  if (!start && existing?.start_slot_id) {
-    const row = await query(`SELECT starts_at FROM time_slots WHERE id=$1`, [existing.start_slot_id]);
-    start = row.rows[0]?.starts_at ? String(row.rows[0].starts_at).slice(0,5) : null;
-  }
-  if (!start) throw ApiError.badRequest('Time slot is required.');
-
-  return { sectionId, requirementId, instructorId, roomId, weekday, start };
+if (body.day) {
+  weekday = DAY_TO_ISO[String(body.day).trim().toLowerCase()] || null;
 }
 
+if (!weekday) {
+  weekday = num(body.weekday);
+}
+
+if (!weekday && existing?.start_slot_id) {
+  const row = await query(
+    `SELECT weekday FROM time_slots WHERE id=$1`,
+    [existing.start_slot_id]
+  );
+  weekday = row.rows[0]?.weekday ? Number(row.rows[0].weekday) : null;
+}
+
+if (!weekday) throw ApiError.badRequest('Day is required.');
+
+let start = await resolveFrontendSlotStart(
+  version.term_id,
+  body.slot,
+  body.start ?? body.starts_at ?? body.startTime
+);
+
+if (!start && existing?.start_slot_id) {
+  const row = await query(
+    `SELECT starts_at FROM time_slots WHERE id=$1`,
+    [existing.start_slot_id]
+  );
+  start = row.rows[0]?.starts_at
+    ? String(row.rows[0].starts_at).slice(0, 5)
+    : null;
+}
+
+if (!start) throw ApiError.badRequest('Time slot is required.');
+
+return {
+  sectionId,
+  requirementId,
+  instructorId,
+  roomId,
+  weekday,
+  start
+};
+}
 async function mapAllocationsForFrontend(rows, termId) {
   const slotRows = await query(
     `SELECT DISTINCT starts_at FROM time_slots WHERE term_id=$1 ORDER BY starts_at`,
