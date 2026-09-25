@@ -1933,7 +1933,7 @@ const createSectionEnrollment = asyncHandler(async (req,res)=>{
   const component=normalizeSessionKind(req.body.component ?? req.body.section_kind);
   if(!studentId||!termId||!courseId||!sectionId) throw ApiError.badRequest('student, course, section and term are required.');
 
-  const section=(await query(`SELECT s.id,s.course_id,s.term_id,c.department_id,sr.kind AS requirement_kind FROM sections s JOIN courses c ON c.id=s.course_id LEFT JOIN session_requirements sr ON sr.id=s.requirement_id WHERE s.id=$1::bigint`,[sectionId])).rows[0];
+  const section=(await query(`SELECT s.id,s.course_id,s.term_id,c.department_id,sr.kind AS requirement_kind FROM sections s JOIN courses c ON c.id=s.course_id LEFT JOIN session_requirements sr ON sr.id=s.requirement_id WHERE s.id=$1::bigint`,[Number(sectionId)])).rows[0];
   if(!section) throw ApiError.notFound('Section not found.');
   if(Number(section.course_id)!==Number(courseId)) throw ApiError.badRequest('Selected section belongs to another course.');
   if(Number(section.term_id)!==Number(termId)) throw ApiError.badRequest('Selected section belongs to another term.');
