@@ -1296,6 +1296,18 @@ const createRequirement = asyncHandler(async (req, res) => {
   return created(res, await mapRequirementForFrontend(updated));
 });
 
+// The Requirements page's "+ Add equipment" button (createEquipment() in the
+// frontend api client) posts to /equipment, but no route existed anywhere for
+// it - equipmentRepo.findOrCreateByName was only ever called internally by
+// the room/requirement sync helpers, never exposed to the frontend. That's
+// why it surfaced as "Route not found: POST /api/v1/equipment" in the UI.
+const createEquipmentCompat = asyncHandler(async (req, res) => {
+  const name = String(req.body.name ?? req.body.equipment_name ?? '').trim();
+  if (!name) throw ApiError.badRequest('Equipment name is required.');
+  const equipment = await equipmentRepo.findOrCreateByName(name);
+  return created(res, { id: Number(equipment.id), name: equipment.name, label: equipment.name });
+});
+
 const updateRequirement = asyncHandler(async (req, res) => {
   const id = num(req.params.id);
   const current = await sessionRequirementsRepo.findById(id);
@@ -1875,6 +1887,30 @@ const generateDraft = asyncHandler(async (req, res) => {
 
   const modelData = await modelService.solveTimetable(version.term_id);
   const scheduled = modelData?.scheduled_sessions || modelData?.data?.scheduled_sessions || [];
+
+  // Defensive guard: room_id/instructor_id/section_id/requirement_id in the
+  // model's response are normally echoes of catalog rows we sent it, but if
+  // any turn out stale (term changed, row deleted, model desync) a raw INSERT
+  // throws an FK violation that aborts the WHOLE transaction - after the
+  // DELETE above already ran, wiping the previous draft with nothing to show
+  // for it. Check existence once per batch so one bad session is skipped
+  // instead of failing the entire Generate Draft action.
+  const uniq = (arr) => [...new Set(arr.filter((v) => v != null))];
+  const roomIdsToCheck = uniq(scheduled.map((s) => num(s.room_id ?? s.room?.id)));
+  const instructorIdsToCheck = uniq(scheduled.map((s) => num(s.instructor_id ?? s.instructor?.id)));
+  const sectionIdsToCheck = uniq(scheduled.map((s) => num(s.section_id)));
+  const requirementIdsToCheck = uniq(scheduled.map((s) => num(s.requirement_id)));
+  const [validRoomRows, validInstructorRows, validSectionRows, validRequirementRows] = await Promise.all([
+    roomIdsToCheck.length ? query(`SELECT id FROM rooms WHERE id = ANY($1::bigint[])`, [roomIdsToCheck]) : { rows: [] },
+    instructorIdsToCheck.length ? query(`SELECT id FROM accounts WHERE id = ANY($1::bigint[])`, [instructorIdsToCheck]) : { rows: [] },
+    sectionIdsToCheck.length ? query(`SELECT id FROM sections WHERE id = ANY($1::bigint[])`, [sectionIdsToCheck]) : { rows: [] },
+    requirementIdsToCheck.length ? query(`SELECT id FROM session_requirements WHERE id = ANY($1::bigint[])`, [requirementIdsToCheck]) : { rows: [] },
+  ]);
+  const validRoomIds = new Set(validRoomRows.rows.map((r) => Number(r.id)));
+  const validInstructorIds = new Set(validInstructorRows.rows.map((r) => Number(r.id)));
+  const validSectionIds = new Set(validSectionRows.rows.map((r) => Number(r.id)));
+  const validRequirementIds = new Set(validRequirementRows.rows.map((r) => Number(r.id)));
+
   await withTransaction(async (client) => {
     await client.query(`DELETE FROM allocations WHERE version_id=$1`, [version.id]);
     for (const session of scheduled) {
@@ -1891,6 +1927,7 @@ const generateDraft = asyncHandler(async (req, res) => {
       const sectionId = num(session.section_id);
       const requirementId = num(session.requirement_id);
       if (!endsAt || !instructorId || !roomId || !sectionId || !requirementId) continue;
+      if (!validRoomIds.has(roomId) || !validInstructorIds.has(instructorId) || !validSectionIds.has(sectionId) || !validRequirementIds.has(requirementId)) continue;
       await client.query(`INSERT INTO allocations(term_id,version_id,section_id,requirement_id,instructor_id,room_id,start_slot_id,ends_at,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [version.term_id,version.id,sectionId,requirementId,instructorId,roomId,startSlotId,endsAt,req.user.id]);
     }
   });
@@ -2386,7 +2423,7 @@ module.exports = {
   overview, auditLog,
   getDepartmentsCompat, createDepartment, updateDepartment, deleteDepartment,
   getMasterData, createMasterData, updateMasterData, endAcademicTerm, deleteMasterData, planningCatalog,
-  getRequirements, createRequirement, updateRequirement, createEquipmentCatalogItem, getInstructorAssignments, assignInstructor, removeInstructor,
+  getRequirements, createRequirement, updateRequirement, createEquipmentCompat, getInstructorAssignments, assignInstructor, removeInstructor,
   getMyAvailability, saveMyAvailability, confirmMyAvailability,
   getLabChecks, saveLabCheck, getRoomsCompat, createRoomCompat, updateRoomCompat, deleteRoom,
   getDraftWorkflow, getDraftAllocations, generateDraft, submitDraftReview,

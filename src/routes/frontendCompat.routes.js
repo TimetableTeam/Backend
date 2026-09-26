@@ -57,14 +57,14 @@ router.post('/master-data/:type', authenticate, coordinator, c.createMasterData)
 router.put('/master-data/:type/:id', authenticate, coordinator, c.updateMasterData);
 router.delete('/master-data/:type/:id', authenticate, coordinator, c.deleteMasterData);
 
-// Requirements and instructor assignments belong to Coordinator.
+/// Requirements and instructor assignments belong to Coordinator.
 router.get('/requirements', authenticate, c.getRequirements);
 router.get('/instructor-assignments', authenticate, c.getInstructorAssignments);
 router.post('/requirements', authenticate, coordinator, c.createRequirement);
 router.put('/requirements/:id', authenticate, coordinator, c.updateRequirement);
-// Coordinators can extend the equipment vocabulary used by requirement forms.
-// Room inventory remains Lab Manager-owned; this only creates a catalog item.
-router.post('/equipment', authenticate, coordinator, c.createEquipmentCatalogItem);
+
+router.post('/equipment', authenticate, coordinator, c.createEquipmentCompat);
+
 router.post('/sections/:id/instructors', authenticate, coordinator, c.assignInstructor);
 router.delete('/sections/:id/instructors/:staffId', authenticate, coordinator, c.removeInstructor);
 
