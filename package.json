@@ -1,6 +1,6 @@
 {
   "name": "tanseek-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "P4 - Timetable, Room & Lab Allocation backend (Node.js/Express/PostgreSQL)",
   "main": "src/server.js",
@@ -11,7 +11,10 @@
     "test": "node --test tests/unit/*.js",
     "test:integration": "node --test tests/integration/*.js",
     "test:all": "node --test tests/unit/*.js tests/integration/*.js",
-    "db:constraint-report": "node scripts/run-constraint-cases.js"
+    "db:constraint-report": "node scripts/run-constraint-cases.js",
+    "db:import-benchmark": "node scripts/import-benchmark-v67.js",
+    "db:import-benchmark:dry": "node scripts/import-benchmark-v67.js --dry-run",
+    "db:verify-benchmark": "node scripts/verify-benchmark-v67.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

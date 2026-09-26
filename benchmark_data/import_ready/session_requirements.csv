@@ -1,0 +1,21 @@
+id,course_id,term_id,kind,sessions_per_week,duration_minutes,required_room_kind,created_by,expected_students,frontend_room_type,preferred_windows,notes
+1,1,1,PRACTICAL,1,120,LAB,2,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+2,2,1,PRACTICAL,1,120,LAB,2,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+3,3,1,PRACTICAL,1,120,LAB,2,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+4,4,1,LECTURE,1,120,CLASSROOM,2,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+5,5,1,LECTURE,1,120,CLASSROOM,2,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+6,6,1,PRACTICAL,1,120,LAB,20,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+7,7,1,PRACTICAL,1,120,LAB,20,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+8,8,1,PRACTICAL,1,120,LAB,20,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+9,9,1,LECTURE,1,120,CLASSROOM,20,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+10,10,1,LECTURE,1,120,CLASSROOM,20,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+11,11,1,PRACTICAL,1,120,LAB,38,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+12,12,1,PRACTICAL,1,120,LAB,38,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+13,13,1,PRACTICAL,1,120,LAB,38,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+14,14,1,LECTURE,1,120,CLASSROOM,38,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+15,15,1,LECTURE,1,120,CLASSROOM,38,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+16,16,1,PRACTICAL,1,120,LAB,56,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+17,17,1,PRACTICAL,1,120,LAB,56,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+18,18,1,PRACTICAL,1,120,LAB,56,40,Computer Lab,[],Imported from Tanseek realistic benchmark; DB-ready v1
+19,19,1,LECTURE,1,120,CLASSROOM,56,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1
+20,20,1,LECTURE,1,120,CLASSROOM,56,40,Classroom,[],Imported from Tanseek realistic benchmark; DB-ready v1

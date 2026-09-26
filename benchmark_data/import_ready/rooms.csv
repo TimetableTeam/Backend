@@ -1,0 +1,21 @@
+id,building,code,kind,capacity,accessible,active,managed_by
+1,Benchmark Building,LAB-01,LAB,44,False,True,3
+2,Benchmark Building,LAB-02,LAB,44,False,True,3
+3,Benchmark Building,LAB-03,LAB,44,False,True,3
+4,Benchmark Building,LAB-04,LAB,44,False,True,3
+5,Benchmark Building,LAB-05,LAB,44,False,True,3
+6,Benchmark Building,LAB-06,LAB,44,False,True,3
+7,Benchmark Building,LAB-07,LAB,44,False,True,3
+8,Benchmark Building,LAB-08,LAB,44,False,True,3
+9,Benchmark Building,LAB-09,LAB,44,False,True,3
+10,Benchmark Building,LAB-10,LAB,30,False,True,3
+11,Benchmark Building,ROOM-11,CLASSROOM,60,False,True,3
+12,Benchmark Building,ROOM-12,CLASSROOM,60,False,True,3
+13,Benchmark Building,ROOM-13,CLASSROOM,60,False,True,3
+14,Benchmark Building,ROOM-14,CLASSROOM,60,False,True,3
+15,Benchmark Building,ROOM-15,CLASSROOM,60,False,True,3
+16,Benchmark Building,ROOM-16,CLASSROOM,60,False,True,3
+17,Benchmark Building,ROOM-17,CLASSROOM,60,False,True,3
+18,Benchmark Building,ROOM-18,CLASSROOM,60,False,True,3
+19,Benchmark Building,ROOM-19,CLASSROOM,60,False,True,3
+20,Benchmark Building,ROOM-20,CLASSROOM,60,False,True,3

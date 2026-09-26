@@ -213,6 +213,15 @@ function backendRoomKind(value) {
   return text.includes('LAB') ? 'LAB' : 'CLASSROOM';
 }
 
+function normalizeEquipmentName(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_{2,}/g, '_');
+}
+
 function normalizeFrontendRoomStatus(value, active = true) {
   const status = String(value || '').trim().toLowerCase();
   if (['available', 'pending', 'conflict'].includes(status)) return status;
@@ -388,6 +397,28 @@ async function resolveDepartmentId(req, explicitValue = null) {
   return null;
 }
 
+
+async function assertCoordinatorCourseScope(req, courseId) {
+  if (req.user?.role !== ROLES.DEPARTMENT_COORDINATOR) return;
+  const course = await coursesRepo.findById(courseId);
+  if (!course) throw ApiError.notFound('Course not found.');
+  const allowedDeptIds = await getAccountDepartmentIds(req.user.id);
+  if (!allowedDeptIds.includes(Number(course.department_id))) {
+    throw ApiError.forbidden('You cannot manage courses, requirements or sections outside your department scope.');
+  }
+}
+
+async function resolveSectionRequirement(courseId, termId, component) {
+  const normalized = normalizeSessionKind(component);
+  const reqs = await sessionRequirementsRepo.listByCourseTerm(courseId, termId);
+  const matches = reqs.filter((item) => normalizeSessionKind(item.kind) === normalized);
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    throw ApiError.conflict(`Multiple ${normalized.toLowerCase()} requirements exist for this course. Keep exactly one requirement per component before creating sections.`);
+  }
+  return null;
+}
+
 async function getActiveTerm() {
   return termsRepo.findCurrent();
 }
@@ -403,6 +434,23 @@ const DEFAULT_TERM_SLOTS = [
   ['13:00', '15:00'],
   ['15:00', '17:00'],
 ];
+
+function normalizeSlotClock(value) {
+  const raw = String(value || '').trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function clockMinutes(value) {
+  const normalized = normalizeSlotClock(value);
+  if (!normalized) return null;
+  const [hour, minute] = normalized.split(':').map(Number);
+  return hour * 60 + minute;
+}
 
 async function ensureDefaultTermSlots(db, termId) {
   const existing = await db.query(`SELECT 1 FROM time_slots WHERE term_id=$1 LIMIT 1`, [termId]);
@@ -619,26 +667,84 @@ const resetPassword = asyncHandler(async (req, res) => {
 const overview = asyncHandler(async (req, res) => {
   const term = await getActiveTerm();
   const termId = term?.id || null;
-  const [accounts, deptCount, roomStats, versions, publishedSessions, audit] = await Promise.all([
+  const [accounts, deptCount, roomStats, versions, publishedSessions, draftSessions, audit] = await Promise.all([
     query(`SELECT count(*)::int AS count FROM accounts WHERE state <> 'DISABLED'`),
     query(`SELECT count(*)::int AS count FROM departments`),
     query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE kind='LAB')::int AS labs, count(*) FILTER (WHERE active)::int AS available FROM rooms`),
     termId ? query(`SELECT state, count(*)::int AS count FROM schedule_versions WHERE term_id=$1 GROUP BY state`, [termId]) : Promise.resolve({ rows: [] }),
     termId ? query(`SELECT count(*)::int AS count FROM allocations a JOIN schedule_versions v ON v.id=a.version_id WHERE v.term_id=$1 AND v.state='PUBLISHED'`, [termId]) : Promise.resolve({ rows: [{ count: 0 }] }),
-    query(`SELECT id,action,entity_type,entity_id,outcome,occurred_at FROM audit_events ORDER BY occurred_at DESC LIMIT 8`),
+    termId ? query(`SELECT count(*)::int AS count FROM allocations WHERE version_id=(SELECT id FROM schedule_versions WHERE term_id=$1 AND state='DRAFT' ORDER BY version_number DESC LIMIT 1)`, [termId]) : Promise.resolve({ rows: [{ count: 0 }] }),
+    query(`SELECT ae.id,ae.action,ae.entity_type,ae.entity_id,ae.outcome,ae.occurred_at,ae.actor_email,a.full_name AS actor_name
+             FROM audit_events ae
+             LEFT JOIN accounts a ON a.id=ae.actor_account_id
+            ORDER BY ae.occurred_at DESC LIMIT 8`),
   ]);
 
-  const stateCount = Object.fromEntries(versions.rows.map((r) => [String(r.state).toUpperCase(), r.count]));
+  const stateCount = Object.fromEntries(versions.rows.map((r) => [String(r.state).toUpperCase(), Number(r.count || 0)]));
+  const currentTerm = term ? {
+    id: term.id,
+    name: term.name,
+    status: frontendTermStatus(term.state),
+    start: dateOnly(term.starts_on),
+    end: dateOnly(term.ends_on),
+  } : null;
+
+  const activeAccounts = Number(accounts.rows[0]?.count || 0);
+  const departments = Number(deptCount.rows[0]?.count || 0);
+  const rooms = Number(roomStats.rows[0]?.total || 0);
+  const labs = Number(roomStats.rows[0]?.labs || 0);
+  const availableLabs = Number(roomStats.rows[0]?.available || 0);
+  const draftVersions = stateCount.DRAFT || 0;
+  const publishedVersions = stateCount.PUBLISHED || 0;
+  const publishedSessionCount = Number(publishedSessions.rows[0]?.count || 0);
+  const draftSessionCount = Number(draftSessions.rows[0]?.count || 0);
+  const isSuperAdmin = req.user.role === ROLES.SUPER_ADMIN;
+
+  const recentActivity = audit.rows.map((row) => ({
+    id: row.id,
+    title: String(row.action || 'ACTIVITY').toLowerCase().split('_').filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
+    detail: [row.entity_type, row.entity_id ? `#${row.entity_id}` : null, row.outcome].filter(Boolean).join(' · '),
+    actor: row.actor_name || row.actor_email || '',
+    at: row.occurred_at,
+  }));
+
+  const metrics = isSuperAdmin ? [
+    { label: 'Active accounts', value: String(activeAccounts), helper: 'Enabled university accounts', icon: 'user', tone: 'navy' },
+    { label: 'Departments', value: String(departments), helper: 'Academic departments', icon: 'room', tone: 'teal' },
+    { label: 'Rooms & labs', value: String(rooms), helper: `${labs} labs · ${availableLabs} available`, icon: 'grid', tone: 'navy' },
+    { label: 'Published sessions', value: String(publishedSessionCount), helper: 'Sessions in the current published version', icon: 'calendar', tone: 'teal' },
+  ] : [
+    { label: 'Draft versions', value: String(draftVersions), helper: 'Draft schedule versions in the current term', icon: 'edit', tone: 'navy' },
+    { label: 'Published versions', value: String(publishedVersions), helper: 'Official published versions', icon: 'check', tone: 'teal' },
+    { label: 'Published sessions', value: String(publishedSessionCount), helper: 'Sessions in the official timetable', icon: 'calendar', tone: 'navy' },
+    { label: 'Draft sessions', value: String(draftSessionCount), helper: 'Sessions in the latest draft version', icon: 'edit', tone: 'teal' },
+  ];
+
   return ok(res, {
-    currentTerm: term ? { id: term.id, name: term.name, status: frontendTermStatus(term.state), start: dateOnly(term.starts_on), end: dateOnly(term.ends_on) } : null,
-    activeAccounts: accounts.rows[0]?.count || 0,
-    departments: deptCount.rows[0]?.count || 0,
-    rooms: roomStats.rows[0]?.total || 0,
-    labs: roomStats.rows[0]?.labs || 0,
-    availableLabs: roomStats.rows[0]?.available || 0,
-    draftVersions: stateCount.DRAFT || 0,
-    publishedVersions: stateCount.PUBLISHED || 0,
-    publishedSessions: publishedSessions.rows[0]?.count || 0,
+    kind: isSuperAdmin ? 'system' : 'planning',
+    eyebrow: isSuperAdmin ? 'System overview' : 'Planning summary',
+    description: isSuperAdmin
+      ? 'A live university-wide view of accounts, departments, rooms and published scheduling activity.'
+      : 'A quick view of schedule readiness, room utilization and items that need action before publication.',
+    metrics,
+    summary: [
+      ['Current term', currentTerm?.name || 'No active term'],
+      ['Term status', currentTerm?.status || '—'],
+      ['Rooms available', `${availableLabs} labs available`],
+    ],
+    recent_activity: recentActivity,
+
+    // Keep legacy keys for older frontend builds during rolling deployments.
+    currentTerm,
+    activeAccounts,
+    departments,
+    rooms,
+    labs,
+    availableLabs,
+    draftVersions,
+    publishedVersions,
+    publishedSessions: publishedSessionCount,
+    draftSessions: draftSessionCount,
     recentActivity: audit.rows,
     role: req.user.role,
     scope: { departmentId: req.user.homeDepartmentId ?? null },
@@ -700,11 +806,25 @@ async function mapMasterRecords(type) {
     if (!termId) return [];
     const rows = await sectionsRepo.listByTerm(termId);
     const groups = await Promise.all(rows.map((r) => sectionsRepo.getGroupsForSection(r.id)));
-    return rows.map((r, i) => ({
-      id: r.id, code: r.code, term_id: r.term_id, course_id: r.course_id,
-      student_group_id: groups[i][0]?.id || '', size: groups[i][0]?.student_count || 0,
-      status: r.status,
-    }));
+    const requirementRows = await sessionRequirementsRepo.listByTerm(termId);
+    const requirementById = new Map(requirementRows.map((item) => [Number(item.id), item]));
+    return rows.map((r, i) => {
+      let requirement = requirementById.get(Number(r.requirement_id));
+      const inferredComponent = requirement?.kind || inferFrontendComponentFromSection(r);
+      if (!requirement) {
+        const exact = requirementRows.filter((item) => Number(item.course_id) === Number(r.course_id) && normalizeSessionKind(item.kind) === normalizeSessionKind(inferredComponent));
+        const allForCourse = requirementRows.filter((item) => Number(item.course_id) === Number(r.course_id));
+        requirement = exact.length === 1 ? exact[0] : (allForCourse.length === 1 ? allForCourse[0] : null);
+      }
+      const component = requirement?.kind || inferredComponent;
+      const requirementId = requirement?.id || null;
+      return {
+        id: r.id, code: r.code, term_id: r.term_id, course_id: r.course_id,
+        requirement_id: requirementId, requirementId, component,
+        student_group_id: groups[i][0]?.id || '', size: groups[i][0]?.student_count || 0,
+        status: r.status,
+      };
+    });
   }
   if (type === 'slots') {
     if (!termId) return [];
@@ -745,9 +865,68 @@ const createMasterData = asyncHandler(async (req, res) => {
     const holidays = await termsRepo.getHolidays(result.id);
     return created(res, frontendTerm(result, holidays));
   }
+  if (type === 'slots') {
+    const termId = await getActiveTermId();
+    if (!termId) throw ApiError.badRequest('An active academic term is required before adding time slots.');
+
+    const start = normalizeSlotClock(req.body.start ?? req.body.starts_at);
+    const end = normalizeSlotClock(req.body.end ?? req.body.ends_at);
+    if (!start || !end) throw ApiError.badRequest('Start time and end time are required.');
+
+    const startMinutes = clockMinutes(start);
+    const endMinutes = clockMinutes(end);
+    if (endMinutes - startMinutes !== 120) {
+      throw ApiError.badRequest('Time slots must be exactly 2 hours under the current scheduling policy.');
+    }
+    if (startMinutes < 9 * 60 || endMinutes > 17 * 60) {
+      throw ApiError.badRequest('Time slots must stay within the current teaching window of 09:00 to 17:00.');
+    }
+
+    const result = await withTransaction(async (client) => {
+      const overlap = await client.query(
+        `SELECT weekday,starts_at,ends_at
+           FROM time_slots
+          WHERE term_id=$1
+            AND NOT (starts_at=$2::time AND ends_at=$3::time)
+            AND starts_at < $3::time
+            AND ends_at > $2::time
+          LIMIT 1`,
+        [termId, start, end]
+      );
+      if (overlap.rows[0]) {
+        throw ApiError.conflict('This time slot overlaps an existing slot in the active term.');
+      }
+
+      let addedDays = 0;
+      for (const weekday of DEFAULT_TERM_DAYS) {
+        const inserted = await client.query(
+          `INSERT INTO time_slots(term_id,weekday,starts_at,ends_at,label)
+           VALUES($1,$2,$3,$4,$5)
+           ON CONFLICT(term_id,weekday,starts_at) DO NOTHING
+           RETURNING id`,
+          [termId, weekday, start, end, `${start}-${end}`]
+        );
+        if (inserted.rows[0]) addedDays += 1;
+      }
+
+      const representative = await client.query(
+        `SELECT id FROM time_slots WHERE term_id=$1 AND starts_at=$2::time AND ends_at=$3::time ORDER BY weekday LIMIT 1`,
+        [termId, start, end]
+      );
+      return { id: representative.rows[0]?.id || `${start}-${end}`, start, end, label: `${start}-${end}`, added_days: addedDays };
+    });
+
+    return created(res, result);
+  }
   if (type === 'courses') {
     const departmentLabel = req.body.department ?? req.body.departmentName ?? req.body.department_code ?? null;
     const departmentId = await resolveDepartmentId(req, departmentLabel);
+    if (req.user.role === ROLES.DEPARTMENT_COORDINATOR) {
+      const allowedDeptIds = await getAccountDepartmentIds(req.user.id);
+      if (!allowedDeptIds.includes(Number(departmentId))) {
+        throw ApiError.forbidden('You cannot create courses outside your department scope.');
+      }
+    }
     const title = String(req.body.name ?? req.body.title ?? '').trim();
     const code = String(req.body.code ?? '').trim().toUpperCase();
     if (!departmentId || !code || !title) {
@@ -765,11 +944,23 @@ const createMasterData = asyncHandler(async (req, res) => {
   if (type === 'sections') {
     const termId = num(req.body.termId ?? req.body.term_id) || await getActiveTermId();
     const courseId = num(req.body.courseId ?? req.body.course_id);
+    const component = normalizeSessionKind(req.body.component ?? req.body.session_type ?? req.body.kind);
     if (!termId || !courseId || !req.body.code) throw ApiError.badRequest('termId, courseId and code are required.');
-    const section = await sectionsRepo.createSection({ termId, courseId, code: String(req.body.code).toUpperCase(), createdBy: req.user.id });
+    await assertCoordinatorCourseScope(req, courseId);
+    const requirement = await resolveSectionRequirement(courseId, termId, component);
+    if (!requirement) {
+      throw ApiError.conflict(`Create the ${component.toLowerCase()} requirement for this course before creating a ${component.toLowerCase()} section.`);
+    }
+    const section = await sectionsRepo.createSection({
+      termId, courseId, requirementId: requirement.id,
+      code: String(req.body.code).toUpperCase(), createdBy: req.user.id
+    });
     const groupId = num(req.body.student_group_id ?? req.body.studentGroupId);
     if (groupId) await query(`INSERT INTO section_groups(section_id,group_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, [section.id, groupId]);
-    return created(res, { ...section, student_group_id: groupId || '', size: num(req.body.size, 0) });
+    return created(res, {
+      ...section, requirement_id: requirement.id, requirementId: requirement.id, component,
+      student_group_id: groupId || '', size: num(req.body.size, 0)
+    });
   }
   throw ApiError.badRequest(`Creating ${type} through master-data is not supported.`);
 });
@@ -803,24 +994,43 @@ const updateMasterData = asyncHandler(async (req, res) => {
   }
   if (type === 'courses') {
     const current = await coursesRepo.findById(id); if (!current) throw ApiError.notFound('Course not found.');
+    await assertCoordinatorCourseScope(req, current.id);
     const requestedDepartment = req.body.department ?? req.body.departmentName ?? req.body.department_code ?? null;
     const resolvedDepartmentId = (req.body.departmentId !== undefined || req.body.department_id !== undefined || requestedDepartment)
       ? await resolveDepartmentId(req, requestedDepartment)
       : current.department_id;
     if (!resolvedDepartmentId) throw ApiError.badRequest('Department could not be resolved.');
+    if (req.user.role === ROLES.DEPARTMENT_COORDINATOR) {
+      const allowedDeptIds = await getAccountDepartmentIds(req.user.id);
+      if (!allowedDeptIds.includes(Number(resolvedDepartmentId))) {
+        throw ApiError.forbidden('You cannot move a course outside your department scope.');
+      }
+    }
     const r = (await query(`UPDATE courses SET code=$2,title=$3,department_id=$4,updated_at=now() WHERE id=$1 RETURNING *`, [id, req.body.code ?? current.code, req.body.name ?? req.body.title ?? current.title, resolvedDepartmentId])).rows[0];
     const department = (await query(`SELECT code,name FROM departments WHERE id=$1`, [r.department_id])).rows[0];
     return ok(res,{id:r.id,code:r.code,name:r.title,title:r.title,department_id:r.department_id,departmentId:r.department_id,department:department?.name || department?.code || '',contact_hours:num(req.body.contact_hours,3)});
   }
   if (type === 'sections') {
     const current = await sectionsRepo.findById(id); if (!current) throw ApiError.notFound('Section not found.');
-    const r = (await query(`UPDATE sections SET code=$2,course_id=$3,updated_at=now() WHERE id=$1 RETURNING *`, [id, req.body.code ?? current.code, num(req.body.course_id ?? req.body.courseId, current.course_id)])).rows[0];
+    await assertCoordinatorCourseScope(req, current.course_id);
+    const courseId = num(req.body.course_id ?? req.body.courseId, current.course_id);
+    await assertCoordinatorCourseScope(req, courseId);
+    let currentRequirement = current.requirement_id ? await sessionRequirementsRepo.findById(current.requirement_id) : null;
+    const component = normalizeSessionKind(req.body.component ?? req.body.session_type ?? req.body.kind ?? currentRequirement?.kind ?? inferFrontendComponentFromSection(current));
+    const requirement = await resolveSectionRequirement(courseId, current.term_id, component);
+    if (!requirement) {
+      throw ApiError.conflict(`Create the ${component.toLowerCase()} requirement for this course before assigning the section to that component.`);
+    }
+    const r = (await query(
+      `UPDATE sections SET code=$2,course_id=$3,requirement_id=$4,updated_at=now() WHERE id=$1 RETURNING *`,
+      [id, req.body.code ?? current.code, courseId, requirement.id]
+    )).rows[0];
     const groupId = num(req.body.student_group_id ?? req.body.studentGroupId);
     if (groupId) {
       await query(`DELETE FROM section_groups WHERE section_id=$1`, [id]);
       await query(`INSERT INTO section_groups(section_id,group_id) VALUES($1,$2)`, [id, groupId]);
     }
-    return ok(res,{...r,student_group_id:groupId || '',size:num(req.body.size,0)});
+    return ok(res,{...r,requirement_id:requirement.id,requirementId:requirement.id,component,student_group_id:groupId || '',size:num(req.body.size,0)});
   }
   throw ApiError.badRequest(`Updating ${type} through master-data is not supported.`);
 });
@@ -843,9 +1053,20 @@ const endAcademicTerm = asyncHandler(async (req, res) => {
 });
 
 const deleteMasterData = asyncHandler(async (req, res) => {
-  const table = { terms:'academic_terms', courses:'courses', sections:'sections' }[req.params.type];
+  const type = req.params.type;
+  const recordId = num(req.params.id);
+  const table = { terms:'academic_terms', courses:'courses', sections:'sections' }[type];
   if (!table) throw ApiError.badRequest('This master-data type cannot be deleted.');
-  const result = await query(`DELETE FROM ${table} WHERE id=$1 RETURNING id`, [num(req.params.id)]);
+  if (req.user.role === ROLES.DEPARTMENT_COORDINATOR) {
+    if (type === 'courses') {
+      await assertCoordinatorCourseScope(req, recordId);
+    } else if (type === 'sections') {
+      const section = await sectionsRepo.findById(recordId);
+      if (!section) throw ApiError.notFound('Section not found.');
+      await assertCoordinatorCourseScope(req, section.course_id);
+    }
+  }
+  const result = await query(`DELETE FROM ${table} WHERE id=$1 RETURNING id`, [recordId]);
   if (!result.rows[0]) throw ApiError.notFound('Record not found.');
   return res.status(204).send();
 });
@@ -918,14 +1139,23 @@ const planningCatalog = asyncHandler(async (req, res) => {
       level:g.level ?? null,
     })),
     sections: sections.map(s=>{
-      const requirement = requirementById.get(Number(s.requirement_id));
+      let requirement = requirementById.get(Number(s.requirement_id));
+      const inferredComponent = requirement?.kind || (/[-_](?:P|PR|LAB)\d*$/i.test(String(s.code)) ? 'PRACTICAL' : 'LECTURE');
+      if (!requirement) {
+        const exact = requirementRows.filter((item) => Number(item.course_id) === Number(s.course_id) && normalizeSessionKind(item.kind) === normalizeSessionKind(inferredComponent));
+        const allForCourse = requirementRows.filter((item) => Number(item.course_id) === Number(s.course_id));
+        requirement = exact.length === 1 ? exact[0] : (allForCourse.length === 1 ? allForCourse[0] : null);
+      }
       const group = (sectionGroups.get(s.id) || [])[0] || null;
-      const component = requirement?.kind || (/[-_](?:P|PR|LAB)\d*$/i.test(String(s.code)) ? 'PRACTICAL' : 'LECTURE');
+      const component = requirement?.kind || inferredComponent;
+      const requirementId = requirement?.id || null;
       return {
         id:s.id,
         code:s.code,
         course_id:s.course_id,
         courseId:s.course_id,
+        requirement_id:requirementId,
+        requirementId,
         component,
         name:`${s.course_title || s.course_code || s.code} · ${frontendSessionType(component)}`,
         size:group?.student_count || 0,
@@ -953,8 +1183,24 @@ const getRequirements = asyncHandler(async (req, res) => {
   const termId = num(req.query.termId ?? req.query.term_id) || await getActiveTermId();
   if (!termId) return ok(res, []);
   const courseId = num(req.query.courseId ?? req.query.course_id);
-  const rows = await sessionRequirementsRepo.listByTerm(termId, { courseId: courseId || undefined });
+  let rows = await sessionRequirementsRepo.listByTerm(termId, { courseId: courseId || undefined });
+  if (req.user.role === ROLES.DEPARTMENT_COORDINATOR) {
+    const allowedDeptIds = await getAccountDepartmentIds(req.user.id);
+    rows = rows.filter((row) => allowedDeptIds.includes(Number(row.department_id)));
+  }
   return ok(res, await Promise.all(rows.map(mapRequirementForFrontend)));
+});
+
+const createEquipmentCatalogItem = asyncHandler(async (req, res) => {
+  const name = normalizeEquipmentName(req.body.name ?? req.body.label);
+  if (!name) throw ApiError.badRequest('Equipment name is required.');
+  if (name.length > 120) throw ApiError.badRequest('Equipment name is too long.');
+
+  const existing = (await query(`SELECT id,name FROM equipment WHERE lower(name)=lower($1) LIMIT 1`, [name])).rows[0];
+  if (existing) return ok(res, { id: Number(existing.id), name: existing.name, label: existing.name, created: false });
+
+  const row = (await query(`INSERT INTO equipment(name) VALUES($1) RETURNING id,name`, [name])).rows[0];
+  return created(res, { id: Number(row.id), name: row.name, label: row.name, created: true });
 });
 
 const getInstructorAssignments = asyncHandler(async (req, res) => {
@@ -1009,6 +1255,7 @@ const createRequirement = asyncHandler(async (req, res) => {
   const termId = num(req.body.termId ?? req.body.term_id) || await getActiveTermId();
   const kind = normalizeSessionKind(req.body.session_type ?? req.body.component ?? req.body.kind);
   if (!courseId || !termId) throw ApiError.badRequest('courseId and termId are required.');
+  await assertCoordinatorCourseScope(req, courseId);
 
   const frontendRoomLabel = req.body.required_room_type ?? req.body.roomType ?? req.body.roomKind ?? req.body.required_room_kind ?? null;
   const requiredRoomKind = backendRoomKind(frontendRoomLabel);
@@ -1053,6 +1300,7 @@ const updateRequirement = asyncHandler(async (req, res) => {
   const id = num(req.params.id);
   const current = await sessionRequirementsRepo.findById(id);
   if (!current) throw ApiError.notFound('Requirement not found.');
+  await assertCoordinatorCourseScope(req, current.course_id);
 
   const frontendRoomLabel = req.body.required_room_type ?? req.body.roomType ?? req.body.roomKind ?? req.body.required_room_kind ?? current.frontend_room_type;
   const requiredRoomKind = frontendRoomLabel !== undefined && frontendRoomLabel !== null
@@ -1122,13 +1370,18 @@ const assignInstructor = asyncHandler(async (req, res) => {
     }
   }
 
+  if (!instructorId) throw ApiError.badRequest('Instructor is required.');
   if (!requirementId) {
     const reqs = await sessionRequirementsRepo.listByCourseTerm(section.course_id, section.term_id);
     const inferredComponent = inferFrontendComponentFromSection(section);
     const matching = reqs.find((item) => normalizeSessionKind(item.kind) === inferredComponent);
-    requirementId = num(section.requirement_id) || matching?.id || reqs[0]?.id;
+    requirementId = num(section.requirement_id) || matching?.id || (reqs.length === 1 ? reqs[0]?.id : null);
   }
-  if (!instructorId || !requirementId) throw ApiError.badRequest('staffId and requirementId are required.');
+  if (!requirementId) {
+    const course = await coursesRepo.findById(section.course_id);
+    const component = inferFrontendComponentFromSection(section);
+    throw ApiError.conflict(`No ${component.toLowerCase()} requirement is linked to ${course?.code || 'this course'} / ${section.code}. Create or edit the requirement and section first.`);
+  }
 
   const person = await accountsRepo.findById(instructorId);
   if (!person || !['LECTURER', 'TA'].includes(String(person.role || '').toUpperCase()) || person.state === 'DISABLED') {
@@ -1458,16 +1711,9 @@ async function resolveFrontendAllocationInput(version, body, existing = null) {
   if (!requirementId) throw ApiError.badRequest('This section has no Lecture/Practical requirement. Create the course requirement first.');
   if (!instructorId) throw ApiError.badRequest('This section has no instructor assignment. Department Coordinator action is required.');
 
-  // Resolve the room from what the frontend actually sent for THIS request
-  // (numeric id, or the "Room 202 / Room 202 · 30 · Computer Lab" label the
-  // Edit Allocation dropdown submits) before ever falling back to the
-  // allocation's current room. Folding existing?.room_id into the same
-  // nullish-coalescing chain as body.roomId/body.room_id used to short-circuit
-  // this block on every edit (existing.room_id is always present on update),
-  // so a new room selection was silently discarded and the old room kept.
-  let roomId = num(body.roomId ?? body.room_id);
+  let roomId = num(body.roomId ?? body.room_id ?? existing?.room_id);
   if (!roomId && body.room) {
-    const label = String(body.room).trim().split('·')[0].trim();
+    const label = String(body.room).trim();
     const room = await query(
       `SELECT id FROM rooms
         WHERE lower(code)=lower($1)
@@ -1477,7 +1723,6 @@ async function resolveFrontendAllocationInput(version, body, existing = null) {
     );
     roomId = room.rows[0]?.id ? Number(room.rows[0].id) : null;
   }
-  if (!roomId) roomId = num(existing?.room_id);
   if (!roomId) throw ApiError.badRequest('Selected room or lab was not found.');
 
   let weekday = num(body.weekday);
@@ -1530,8 +1775,15 @@ async function mapAllocationsForFrontend(rows, termId) {
 
 async function frontendWorkflow(version, draftId, extra = {}) {
   if (!version) {
-    return { draft_id: draftId, draftId, versionId: null, versionNumber: null, status: 'DRAFT', state: 'DRAFT', ...extra };
+    const activeTermId = await getActiveTermId();
+    const activeTerm = activeTermId ? await termsRepo.findById(activeTermId) : null;
+    return {
+      draft_id: draftId, draftId, versionId: null, versionNumber: null,
+      term_id: activeTerm?.id || null, termId: activeTerm?.id || null, term_name: activeTerm?.name || '', termName: activeTerm?.name || '',
+      status: 'DRAFT', state: 'DRAFT', ...extra
+    };
   }
+  const term = await termsRepo.findById(version.term_id);
   const audit = await query(
     `SELECT ae.action,ae.occurred_at,a.full_name AS actor_name
        FROM audit_events ae
@@ -1549,6 +1801,10 @@ async function frontendWorkflow(version, draftId, extra = {}) {
     draftId,
     versionId: version.id,
     versionNumber: version.version_number,
+    term_id: version.term_id,
+    termId: version.term_id,
+    term_name: term?.name || '',
+    termName: term?.name || '',
     status,
     state: version.state,
     submitted_by: submitted?.actor_name || null,
@@ -1623,19 +1879,11 @@ const generateDraft = asyncHandler(async (req, res) => {
     await client.query(`DELETE FROM allocations WHERE version_id=$1`, [version.id]);
     for (const session of scheduled) {
       const slot = session.slot || {};
-      // Resolve the slot against THIS term's time_slots by weekday+starts_at
-      // first, the same safe lookup modelService.solveAndPersistTimetable
-      // uses. The solver's own slot.id is an internal index into its solve
-      // request, not a time_slots primary key, so trusting it directly (the
-      // old `session.start_slot_id ?? slot.id` first) inserted a start_slot_id
-      // that often didn't exist in this term, which Postgres rejected as a
-      // foreign-key violation ("Referenced record does not exist.").
-      let startSlotId = null;
-      if (slot.weekday != null && slot.starts_at) {
+      let startSlotId = num(session.start_slot_id ?? slot.id);
+      if (!startSlotId && slot.weekday != null && slot.starts_at) {
         const found = await client.query(`SELECT id FROM time_slots WHERE term_id=$1 AND weekday=$2 AND starts_at=$3 LIMIT 1`, [version.term_id, slot.weekday, slot.starts_at]);
-        startSlotId = found.rows[0]?.id || null;
+        startSlotId = found.rows[0]?.id;
       }
-      if (!startSlotId) startSlotId = num(session.start_slot_id ?? slot.id);
       if (!startSlotId) continue;
       const endsAt = session.ends_at ?? slot.ends_at;
       const instructorId = num(session.instructor_id ?? session.instructor?.id);
@@ -1959,7 +2207,26 @@ const createSectionEnrollment = asyncHandler(async (req,res)=>{
   const reg=(await query(`SELECT * FROM student_course_registrations WHERE student_id=$1 AND term_id=$2 AND course_id=$3 AND state='REGISTERED'`,[studentId,termId,courseId])).rows[0];
   if(!reg) throw ApiError.conflict('Register the course before assigning a section.');
 
-  const r=(await query(`INSERT INTO student_section_enrollments(registration_id,term_id,course_id,section_kind,section_id,state,assigned_by,assigned_at) VALUES($1,$2,$3,$4,$5,'ACTIVE',$6,now()) ON CONFLICT(registration_id,section_kind) DO UPDATE SET section_id=EXCLUDED.section_id,state='ACTIVE',assigned_by=EXCLUDED.assigned_by,assigned_at=now(),ended_at=NULL RETURNING *`,[reg.id,termId,courseId,component,sectionId,req.user.id])).rows[0];
+  // Do not depend on a specific legacy UNIQUE constraint here. Some deployed
+  // databases predate the current student_section_enrollments constraint, and
+  // PostgreSQL would otherwise raise 42P10 from ON CONFLICT and surface a 500.
+  // Resolve the existing row explicitly, then update or insert.
+  const existingEnrollment=(await query(
+    `SELECT id FROM student_section_enrollments WHERE registration_id=$1 AND section_kind=$2 LIMIT 1`,
+    [reg.id,component]
+  )).rows[0];
+  const r=existingEnrollment
+    ? (await query(
+        `UPDATE student_section_enrollments
+            SET term_id=$2,course_id=$3,section_id=$4,state='ACTIVE',assigned_by=$5,assigned_at=now(),ended_at=NULL
+          WHERE id=$1 RETURNING *`,
+        [existingEnrollment.id,termId,courseId,sectionId,req.user.id]
+      )).rows[0]
+    : (await query(
+        `INSERT INTO student_section_enrollments(registration_id,term_id,course_id,section_kind,section_id,state,assigned_by,assigned_at)
+         VALUES($1,$2,$3,$4,$5,'ACTIVE',$6,now()) RETURNING *`,
+        [reg.id,termId,courseId,component,sectionId,req.user.id]
+      )).rows[0];
   const c=(await query(`SELECT code FROM courses WHERE id=$1`,[courseId])).rows[0];
   const sec=(await query(`SELECT code FROM sections WHERE id=$1`,[sectionId])).rows[0];
   return created(res,{...r,studentId,termId:r.term_id,courseId:r.course_id,sectionId:r.section_id,component:r.section_kind,course_code:c?.code,section_code:sec?.code,status:'ACTIVE'});
@@ -2119,7 +2386,7 @@ module.exports = {
   overview, auditLog,
   getDepartmentsCompat, createDepartment, updateDepartment, deleteDepartment,
   getMasterData, createMasterData, updateMasterData, endAcademicTerm, deleteMasterData, planningCatalog,
-  getRequirements, createRequirement, updateRequirement, getInstructorAssignments, assignInstructor, removeInstructor,
+  getRequirements, createRequirement, updateRequirement, createEquipmentCatalogItem, getInstructorAssignments, assignInstructor, removeInstructor,
   getMyAvailability, saveMyAvailability, confirmMyAvailability,
   getLabChecks, saveLabCheck, getRoomsCompat, createRoomCompat, updateRoomCompat, deleteRoom,
   getDraftWorkflow, getDraftAllocations, generateDraft, submitDraftReview,

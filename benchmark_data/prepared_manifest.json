@@ -1,0 +1,38 @@
+{
+  "package": "Tanseek Benchmark DB Ready v1",
+  "target_backend": "Tanseek backend v6.7+",
+  "term_name": "Tanseek Benchmark 2027",
+  "term_end_date": null,
+  "namespacing": {
+    "department_code_prefix": "BM_",
+    "department_name_prefix": "Benchmark — ",
+    "room_building": "Benchmark Building"
+  },
+  "counts": {
+    "departments.csv": 8,
+    "sections.csv": 100,
+    "student_groups.csv": 200,
+    "session_requirements.csv": 20,
+    "section_instructors.csv": 104,
+    "courses.csv": 20,
+    "academic_terms.csv": 1,
+    "availability_submissions.csv": 60,
+    "availability_slots.csv": 1120,
+    "allocations.csv": 4,
+    "rooms.csv": 20,
+    "accounts.csv": 72,
+    "required_equipment.csv": 20,
+    "section_groups.csv": 200,
+    "time_slots.csv": 20,
+    "room_equipment.csv": 20,
+    "equipment.csv": 3,
+    "schedule_versions.csv": 1
+  },
+  "changes": [
+    "academic_terms.ends_on cleared so End Term controls the final date",
+    "sections.requirement_id populated from course+term",
+    "department codes/names namespaced to avoid collisions",
+    "room building namespaced to avoid collisions",
+    "session_requirements enriched with expected_students/frontend_room_type/preferred_windows/notes"
+  ]
+}

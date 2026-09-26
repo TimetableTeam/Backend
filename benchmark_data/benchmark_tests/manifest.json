@@ -1,0 +1,14 @@
+{
+  "origin": "Simulated anonymized benchmark derived from Tanseek synthetic schema fixture",
+  "seed": 20260920,
+  "departments": 8,
+  "sections": 100,
+  "student_groups": 200,
+  "courses": 20,
+  "instructors_and_accounts": 72,
+  "rooms": 20,
+  "availability_rows": 1120,
+  "existing_allocations": 4,
+  "labelled_cases": 11,
+  "unlabelled_requests": 500
+}
