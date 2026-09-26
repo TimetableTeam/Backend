@@ -1697,8 +1697,21 @@ const submitDraftReview = asyncHandler(async (req, res) => {
 });
 
 const createDraftAllocation = asyncHandler(async (req, res) => {
-  const version = await resolveDraft(req.params.draftId, req.query.termId);
-  if (!version) throw ApiError.notFound('Schedule draft not found.');
+  // The frontend uses the stable logical alias `draft-v3`. If the current term
+  // has no DRAFT yet, adding the first manual allocation should create that
+  // draft instead of returning 404. This mirrors generateDraft(), which already
+  // creates a draft on demand.
+  let version = await resolveDraft(req.params.draftId, req.query.termId);
+  if (!version) {
+    const termId = num(req.query.termId ?? req.body.termId ?? req.body.term_id) || await getActiveTermId();
+    if (!termId) throw ApiError.badRequest('No active academic term exists for scheduling.');
+    version = await scheduleVersionsRepo.createDraft({
+      termId,
+      name: `Draft from ${req.params.draftId}`,
+      createdBy: req.user.id,
+    });
+  }
+  if (version.state !== 'DRAFT') throw ApiError.conflict(`Only a DRAFT version can be edited; this version is ${version.state}.`);
   const p = await resolveFrontendAllocationInput(version, req.body);
   const allocation = await allocationService.createAllocation({versionId:version.id,...p,actor:req.user});
   const rows = await allocationService.listByVersion(version.id);
