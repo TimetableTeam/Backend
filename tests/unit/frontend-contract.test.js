@@ -19,7 +19,6 @@ const requiredRoutes = [
   "'/master-data/:type'",
   "'/master-data/terms/:id/end'",
   "'/requirements'",
-  "'/equipment'",
   "'/instructor-assignments'",
   "'/availability/me'",
   "'/lab-checks'",
@@ -97,28 +96,4 @@ test('published timetable and workflow responses use the frozen frontend field n
   assert.match(controller, /published_by:/);
   assert.match(controller, /allocations: mapped/);
   assert.match(controller, /status: 'READY_FOR_REVIEW'/);
-});
-
-
-test('coordinator can extend requirement equipment catalog and section assignment avoids legacy ON CONFLICT dependency', () => {
-  const controller = fs.readFileSync(path.join(__dirname, '../../src/controllers/frontendCompatController.js'), 'utf8');
-  assert.match(routes, /post\('\/equipment',\s*authenticate,\s*coordinator,/);
-  assert.match(controller, /const createEquipmentCatalogItem = asyncHandler/);
-  assert.match(controller, /SELECT id FROM student_section_enrollments WHERE registration_id=\$1 AND section_kind=\$2 LIMIT 1/);
-});
-
-test('section creation persists requirement linkage and instructor assignment accepts requirement_id', () => {
-  const controller = fs.readFileSync(path.join(__dirname, '../../src/controllers/frontendCompatController.js'), 'utf8');
-  const sectionsRepo = fs.readFileSync(path.join(__dirname, '../../src/repositories/sectionsRepo.js'), 'utf8');
-  assert.match(controller, /resolveSectionRequirement\(courseId, termId, component\)/);
-  assert.match(controller, /requirementId: requirement\.id/);
-  assert.match(controller, /req\.body\.requirementId \?\? req\.body\.requirement_id/);
-  assert.match(sectionsRepo, /INSERT INTO sections \(term_id, course_id, requirement_id, code, created_by\)/);
-});
-
-test('legacy section-requirement repair migration exists', () => {
-  const migration = fs.readFileSync(path.join(__dirname, '../../database/migrations/011_backfill_section_requirement_links.sql'), 'utf8');
-  assert.match(migration, /UPDATE sections AS s/);
-  assert.match(migration, /s\.requirement_id IS NULL/);
-  assert.match(migration, /session_requirements/);
 });

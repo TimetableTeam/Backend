@@ -4,7 +4,7 @@ const { query } = require('../db/pool');
 
 async function listByTerm(termId) {
   const res = await query(
-    `SELECT s.id, s.term_id, s.course_id, s.requirement_id, c.code AS course_code, c.title AS course_title, s.code, s.status, s.created_at, s.updated_at
+    `SELECT s.id, s.term_id, s.course_id, c.code AS course_code, c.title AS course_title, s.code, s.status, s.created_at, s.updated_at
      FROM sections s JOIN courses c ON c.id = s.course_id
      WHERE s.term_id = $1 ORDER BY c.code, s.code`,
     [termId]
@@ -99,10 +99,10 @@ async function isInstructorQualified(sectionId, instructorId, requirementId) {
   return res.rowCount > 0;
 }
 
-async function createSection({ termId, courseId, requirementId, code, createdBy }) {
+async function createSection({ termId, courseId, code, createdBy }) {
   const res = await query(
-    `INSERT INTO sections (term_id, course_id, requirement_id, code, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [termId, courseId, requirementId || null, code, createdBy]
+    `INSERT INTO sections (term_id, course_id, code, created_by) VALUES ($1,$2,$3,$4) RETURNING *`,
+    [termId, courseId, code, createdBy]
   );
   return res.rows[0];
 }

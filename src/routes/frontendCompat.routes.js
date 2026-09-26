@@ -50,21 +50,17 @@ router.post('/master-data/terms', authenticate, superAdmin, asMasterDataType('te
 router.put('/master-data/terms/:id', authenticate, superAdmin, asMasterDataType('terms', c.updateMasterData));
 router.post('/master-data/terms/:id/end', authenticate, superAdmin, c.endAcademicTerm);
 router.delete('/master-data/terms/:id', authenticate, superAdmin, asMasterDataType('terms', c.deleteMasterData));
-// Time-slot templates are active-term setup and are Super Admin-only.
-router.post('/master-data/slots', authenticate, superAdmin, asMasterDataType('slots', c.createMasterData));
 // Courses/Sections remain Department Coordinator-owned (Super Admin bypasses authorize()).
 router.post('/master-data/:type', authenticate, coordinator, c.createMasterData);
 router.put('/master-data/:type/:id', authenticate, coordinator, c.updateMasterData);
 router.delete('/master-data/:type/:id', authenticate, coordinator, c.deleteMasterData);
 
-/// Requirements and instructor assignments belong to Coordinator.
+// Requirements and instructor assignments belong to Coordinator.
 router.get('/requirements', authenticate, c.getRequirements);
 router.get('/instructor-assignments', authenticate, c.getInstructorAssignments);
 router.post('/requirements', authenticate, coordinator, c.createRequirement);
 router.put('/requirements/:id', authenticate, coordinator, c.updateRequirement);
-
 router.post('/equipment', authenticate, coordinator, c.createEquipmentCompat);
-
 router.post('/sections/:id/instructors', authenticate, coordinator, c.assignInstructor);
 router.delete('/sections/:id/instructors/:staffId', authenticate, coordinator, c.removeInstructor);
 
