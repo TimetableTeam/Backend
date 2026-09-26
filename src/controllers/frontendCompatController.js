@@ -1199,18 +1199,74 @@ const getMyAvailability = asyncHandler(async (req, res) => {
 const saveMyAvailability = asyncHandler(async (req, res) => {
   const termId = num(req.body.termId ?? req.body.term_id) || await getActiveTermId();
   if (!termId) throw ApiError.badRequest('termId is required.');
+
   const submission = await availabilityRepo.upsertSubmissionDraft(termId, req.user.id);
   const allSlots = await timeSlotsRepo.listByTerm(termId);
+
+  const slotTemplates = [];
+  const seenTimes = new Set();
+
+  for (const slot of allSlots) {
+    const start = String(slot.starts_at).slice(0, 5);
+    const end = String(slot.ends_at).slice(0, 5);
+    const key = `${start}-${end}`;
+
+    if (seenTimes.has(key)) continue;
+
+    seenTimes.add(key);
+    slotTemplates.push({ start, end });
+  }
+
+  slotTemplates.sort((a, b) => a.start.localeCompare(b.start));
+
   for (const item of (req.body.slots || [])) {
     let slotId = num(item.slotId ?? item.slot_id);
-    if (!slotId) {
-      const weekday = num(item.weekday);
-      const start = item.start ?? item.starts_at;
-      slotId = allSlots.find(s=>Number(s.weekday)===weekday && String(s.starts_at).slice(0,5)===String(start).slice(0,5))?.id;
+
+    const dayValue = item.day ?? item.weekday;
+    const dayName = typeof dayValue === 'string'
+      ? dayValue.trim().toLowerCase()
+      : null;
+
+    const weekday = num(dayValue) || (dayName ? DAY_TO_ISO[dayName] : null);
+
+    const rawSlotId = String(item.slotId ?? item.slot_id ?? '').trim().toLowerCase();
+
+    if (!slotId && /^s\d+$/.test(rawSlotId)) {
+      const templateIndex = Number(rawSlotId.slice(1)) - 1;
+      const template = slotTemplates[templateIndex];
+
+      if (weekday && template) {
+        slotId = allSlots.find(
+          s =>
+            Number(s.weekday) === weekday &&
+            String(s.starts_at).slice(0, 5) === template.start
+        )?.id;
+      }
     }
-    if (slotId) await availabilityRepo.setSlot(submission.id, termId, slotId, String(item.status ?? item.kind ?? 'AVAILABLE').toUpperCase());
+
+    if (!slotId) {
+      const start = item.start ?? item.starts_at;
+
+      if (weekday && start) {
+        slotId = allSlots.find(
+          s =>
+            Number(s.weekday) === weekday &&
+            String(s.starts_at).slice(0, 5) === String(start).slice(0, 5)
+        )?.id;
+      }
+    }
+
+    if (slotId) {
+      await availabilityRepo.setSlot(
+        submission.id,
+        termId,
+        slotId,
+        String(item.status ?? item.kind ?? 'AVAILABLE').toUpperCase()
+      );
+    }
   }
-  return ok(res, { termId,state:'DRAFT' });
+
+  return ok(res, { termId, state: 'DRAFT' });
 });
 
 const confirmMyAvailability = asyncHandler(async (req, res) => {
