@@ -1458,9 +1458,16 @@ async function resolveFrontendAllocationInput(version, body, existing = null) {
   if (!requirementId) throw ApiError.badRequest('This section has no Lecture/Practical requirement. Create the course requirement first.');
   if (!instructorId) throw ApiError.badRequest('This section has no instructor assignment. Department Coordinator action is required.');
 
-  let roomId = num(body.roomId ?? body.room_id ?? existing?.room_id);
+  // Resolve the room from what the frontend actually sent for THIS request
+  // (numeric id, or the "Room 202 / Room 202 · 30 · Computer Lab" label the
+  // Edit Allocation dropdown submits) before ever falling back to the
+  // allocation's current room. Folding existing?.room_id into the same
+  // nullish-coalescing chain as body.roomId/body.room_id used to short-circuit
+  // this block on every edit (existing.room_id is always present on update),
+  // so a new room selection was silently discarded and the old room kept.
+  let roomId = num(body.roomId ?? body.room_id);
   if (!roomId && body.room) {
-    const label = String(body.room).trim();
+    const label = String(body.room).trim().split('·')[0].trim();
     const room = await query(
       `SELECT id FROM rooms
         WHERE lower(code)=lower($1)
@@ -1470,54 +1477,27 @@ async function resolveFrontendAllocationInput(version, body, existing = null) {
     );
     roomId = room.rows[0]?.id ? Number(room.rows[0].id) : null;
   }
+  if (!roomId) roomId = num(existing?.room_id);
   if (!roomId) throw ApiError.badRequest('Selected room or lab was not found.');
-let weekday = null;
 
-if (body.day) {
-  weekday = DAY_TO_ISO[String(body.day).trim().toLowerCase()] || null;
+  let weekday = num(body.weekday);
+  if (!weekday && body.day) weekday = DAY_TO_ISO[String(body.day).trim().toLowerCase()] || null;
+  if (!weekday && existing?.start_slot_id) {
+    const row = await query(`SELECT weekday FROM time_slots WHERE id=$1`, [existing.start_slot_id]);
+    weekday = row.rows[0]?.weekday ? Number(row.rows[0].weekday) : null;
+  }
+  if (!weekday) throw ApiError.badRequest('Day is required.');
+
+  let start = await resolveFrontendSlotStart(version.term_id, body.slot, body.start ?? body.starts_at ?? body.startTime);
+  if (!start && existing?.start_slot_id) {
+    const row = await query(`SELECT starts_at FROM time_slots WHERE id=$1`, [existing.start_slot_id]);
+    start = row.rows[0]?.starts_at ? String(row.rows[0].starts_at).slice(0,5) : null;
+  }
+  if (!start) throw ApiError.badRequest('Time slot is required.');
+
+  return { sectionId, requirementId, instructorId, roomId, weekday, start };
 }
 
-if (!weekday) {
-  weekday = num(body.weekday);
-}
-
-if (!weekday && existing?.start_slot_id) {
-  const row = await query(
-    `SELECT weekday FROM time_slots WHERE id=$1`,
-    [existing.start_slot_id]
-  );
-  weekday = row.rows[0]?.weekday ? Number(row.rows[0].weekday) : null;
-}
-
-if (!weekday) throw ApiError.badRequest('Day is required.');
-
-let start = await resolveFrontendSlotStart(
-  version.term_id,
-  body.slot,
-  body.start ?? body.starts_at ?? body.startTime
-);
-
-if (!start && existing?.start_slot_id) {
-  const row = await query(
-    `SELECT starts_at FROM time_slots WHERE id=$1`,
-    [existing.start_slot_id]
-  );
-  start = row.rows[0]?.starts_at
-    ? String(row.rows[0].starts_at).slice(0, 5)
-    : null;
-}
-
-if (!start) throw ApiError.badRequest('Time slot is required.');
-
-return {
-  sectionId,
-  requirementId,
-  instructorId,
-  roomId,
-  weekday,
-  start
-};
-}
 async function mapAllocationsForFrontend(rows, termId) {
   const slotRows = await query(
     `SELECT DISTINCT starts_at FROM time_slots WHERE term_id=$1 ORDER BY starts_at`,
@@ -1643,11 +1623,19 @@ const generateDraft = asyncHandler(async (req, res) => {
     await client.query(`DELETE FROM allocations WHERE version_id=$1`, [version.id]);
     for (const session of scheduled) {
       const slot = session.slot || {};
-      let startSlotId = num(session.start_slot_id ?? slot.id);
-      if (!startSlotId && slot.weekday != null && slot.starts_at) {
+      // Resolve the slot against THIS term's time_slots by weekday+starts_at
+      // first, the same safe lookup modelService.solveAndPersistTimetable
+      // uses. The solver's own slot.id is an internal index into its solve
+      // request, not a time_slots primary key, so trusting it directly (the
+      // old `session.start_slot_id ?? slot.id` first) inserted a start_slot_id
+      // that often didn't exist in this term, which Postgres rejected as a
+      // foreign-key violation ("Referenced record does not exist.").
+      let startSlotId = null;
+      if (slot.weekday != null && slot.starts_at) {
         const found = await client.query(`SELECT id FROM time_slots WHERE term_id=$1 AND weekday=$2 AND starts_at=$3 LIMIT 1`, [version.term_id, slot.weekday, slot.starts_at]);
-        startSlotId = found.rows[0]?.id;
+        startSlotId = found.rows[0]?.id || null;
       }
+      if (!startSlotId) startSlotId = num(session.start_slot_id ?? slot.id);
       if (!startSlotId) continue;
       const endsAt = session.ends_at ?? slot.ends_at;
       const instructorId = num(session.instructor_id ?? session.instructor?.id);
@@ -1961,7 +1949,7 @@ const createSectionEnrollment = asyncHandler(async (req,res)=>{
   const component=normalizeSessionKind(req.body.component ?? req.body.section_kind);
   if(!studentId||!termId||!courseId||!sectionId) throw ApiError.badRequest('student, course, section and term are required.');
 
-const section=(await query(`SELECT s.id,s.course_id,s.term_id,c.department_id,sr.kind AS requirement_kind FROM sections s JOIN courses c ON c.id::bigint=s.course_id::bigint LEFT JOIN session_requirements sr ON sr.id::bigint=s.requirement_id::bigint WHERE s.id=$1::bigint`,[Number(sectionId)])).rows[0];
+  const section=(await query(`SELECT s.id,s.course_id,s.term_id,c.department_id,sr.kind AS requirement_kind FROM sections s JOIN courses c ON c.id=s.course_id LEFT JOIN session_requirements sr ON sr.id=s.requirement_id WHERE s.id=$1`,[sectionId])).rows[0];
   if(!section) throw ApiError.notFound('Section not found.');
   if(Number(section.course_id)!==Number(courseId)) throw ApiError.badRequest('Selected section belongs to another course.');
   if(Number(section.term_id)!==Number(termId)) throw ApiError.badRequest('Selected section belongs to another term.');

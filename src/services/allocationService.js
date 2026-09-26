@@ -2,6 +2,7 @@
 
 const { withTransaction, query } = require('../db/pool');
 const conflictService = require('./conflictService');
+const recommendationService = require('./recommendationService');
 const allocationsRepo = require('../repositories/allocationsRepo');
 const timeSlotsRepo = require('../repositories/timeSlotsRepo');
 const scheduleVersionsRepo = require('../repositories/scheduleVersionsRepo');
@@ -11,6 +12,26 @@ const ApiError = require('../utils/ApiError');
 /** Read-only conflict check, used by both the "check" endpoint and create/update. */
 async function checkConflicts({ termId, versionId, sectionId, requirementId, instructorId, roomId, weekday, start, excludeAllocationId }) {
   return conflictService.buildAndEvaluateCandidate({ termId, versionId, sectionId, requirementId, instructorId, roomId, weekday, start, excludeAllocationId });
+}
+
+// The Conflict Resolution screen (reached via /schedule/drafts/:id/validate)
+// enriches every conflict with ranked room/time alternatives from
+// recommendationService. Add Session / Edit Allocation hit the exact same
+// "not feasible" case but used to throw with only the raw conflict list, so
+// the modal had nothing to suggest and just showed "Allocation conflicts
+// detected". Reuse the same recommendation call here so a manual conflict
+// gets the same up-to-5 suggested alternatives.
+async function suggestAlternativesForConflict({ termId, versionId, sectionId, requirementId, instructorId, weekday, start, excludeAllocationId }) {
+  try {
+    const base = { termId, versionId, sectionId, requirementId, instructorId, weekday, start, limit: 5, excludeAllocationId };
+    let alternatives = await recommendationService.suggestAlternatives({ ...base, sameDayOnly: true });
+    if (!alternatives.length) {
+      alternatives = await recommendationService.suggestAlternatives({ ...base, sameDayOnly: false });
+    }
+    return alternatives;
+  } catch (error) {
+    return [];
+  }
 }
 
 async function assertVersionIsDraft(versionId) {
@@ -28,7 +49,8 @@ async function createAllocation({ versionId, sectionId, requirementId, instructo
 
   const { result, resolved } = await checkConflicts({ termId, versionId, sectionId, requirementId, instructorId, roomId, weekday, start });
   if (!result.feasible) {
-    throw ApiError.conflict('Allocation conflicts detected', { conflicts: result.conflicts });
+    const alternatives = await suggestAlternativesForConflict({ termId, versionId, sectionId, requirementId, instructorId, weekday, start });
+    throw ApiError.conflict('Allocation conflicts detected', { conflicts: result.conflicts, alternatives });
   }
 
   const startSlot = resolved.startTimeSlot || (await timeSlotsRepo.findByTermWeekdayStart(termId, weekday, start));
@@ -86,7 +108,17 @@ async function updateAllocation({ allocationId, roomId, weekday, start, instruct
     excludeAllocationId: allocationId,
   });
   if (!result.feasible) {
-    throw ApiError.conflict('Allocation conflicts detected', { conflicts: result.conflicts });
+    const alternatives = await suggestAlternativesForConflict({
+      termId,
+      versionId: existing.version_id,
+      sectionId: existing.section_id,
+      requirementId: existing.requirement_id,
+      instructorId: finalInstructorId,
+      weekday,
+      start,
+      excludeAllocationId: allocationId,
+    });
+    throw ApiError.conflict('Allocation conflicts detected', { conflicts: result.conflicts, alternatives });
   }
 
   const startSlot = resolved.startTimeSlot || (await timeSlotsRepo.findByTermWeekdayStart(termId, weekday, start));
